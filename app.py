@@ -595,7 +595,7 @@ with tab3:
                 pdf.cell(0, 5, "Análise Comportamental, Estrutural e Conjuntural por Trânsitos", 0, 1, "C")
                 pdf.ln(4)
 
-                # Dados do Candidato
+                # 1. Dados do Candidato
                 pdf.set_font("helvetica", "B", 9)
                 pdf.set_fill_color(240, 240, 240)
                 pdf.cell(0, 6, " 1. DADOS GERAIS E ENQUADRAMENTO", 0, 1, "L", True)
@@ -606,7 +606,7 @@ with tab3:
                 pdf.cell(0, 5, f"Índice Global Integrado: {indice_global:.1f}% - {classificacao}", 0, 1)
                 pdf.ln(3)
 
-                # Resumo Executivo / Parecer
+                # 2. Resumo Executivo / Parecer
                 pdf.set_font("helvetica", "B", 9)
                 pdf.cell(0, 6, " 2. PARECER EXECUTIVO E MOMENTO CONJUNTURAL", 0, 1, "L", True)
                 pdf.set_font("helvetica", "", 8)
@@ -620,9 +620,9 @@ with tab3:
                 pdf.multi_cell(0, 4, parecer_texto)
                 pdf.ln(3)
 
-                # Tabela de Competências
+                # 3. Matriz de Competências (Tarot - Fase 1)
                 pdf.set_font("helvetica", "B", 9)
-                pdf.cell(0, 6, " 3. MATRIZ DE COMPETÊNCIAS E ARCANOS (FASE 1)", 0, 1, "L", True)
+                pdf.cell(0, 6, " 3. MATRIZ DE COMPETÊNCIAS E ARCANOS (FASE 1 - TAROT)", 0, 1, "L", True)
                 pdf.set_font("helvetica", "B", 8)
                 pdf.set_fill_color(220, 220, 220)
                 pdf.cell(8, 5, "Pos", 1, 0, "C", True)
@@ -643,7 +643,70 @@ with tab3:
                     pdf.cell(42, 5, competencias_nomes[i-1], 1, 0, "L")
                     pdf.cell(12, 5, str(nota), 1, 0, "C")
                     pdf.cell(128, 5, f"Central: {c_cent}", 1, 1, "L")
+                pdf.ln(3)
+
+                # 4. Trindade Principal & Trânsitos (Fase 2)
+                pdf.set_font("helvetica", "B", 9)
+                pdf.cell(0, 6, " 4. TRINDADE PRINCIPAL E CLIMA PLANETÁRIO (FASE 2)", 0, 1, "L", True)
+                pdf.set_font("helvetica", "", 8)
+                b3 = st.session_state.get("big_three_calculado", {})
+                if b3:
+                    pdf.cell(0, 5, f"• Signo Solar: {b3.get('Solar', {}).get('signo', '-')} ({b3.get('Solar', {}).get('grau', '-')})", 0, 1)
+                    pdf.cell(0, 5, f"• Signo Ascendente: {b3.get('Ascendente', {}).get('signo', '-')} ({b3.get('Ascendente', {}).get('grau', '-')})", 0, 1)
+                    pdf.cell(0, 5, f"• Signo Lunar: {b3.get('Lunar', {}).get('signo', '-')} ({b3.get('Lunar', {}).get('grau', '-')})", 0, 1)
                 
+                transitos = st.session_state.get("transitos_calculados", {})
+                if transitos:
+                    pdf.ln(2)
+                    pdf.cell(0, 5, "Clima Planetário em Trânsito (Ano Corrente):", 0, 1)
+                    for p_nome, p_sig in transitos.items():
+                        pdf.cell(0, 4, f"   - {p_nome}: {p_sig}", 0, 1)
+                pdf.ln(3)
+
+                # 5. Matriz de Avaliação por Casas (12 Casas Astrológicas)
+                pdf.set_font("helvetica", "B", 9)
+                pdf.cell(0, 6, " 5. MAPA ASTROLÓGICO PONDERADO (12 CASAS)", 0, 1, "L", True)
+                pdf.set_font("helvetica", "B", 8)
+                pdf.set_fill_color(220, 220, 220)
+                pdf.cell(12, 5, "Casa", 1, 0, "C", True)
+                pdf.cell(38, 5, "Signo (Cúspide)", 1, 0, "L", True)
+                pdf.cell(18, 5, "Nota Base", 1, 0, "C", True)
+                pdf.cell(18, 5, "Peso Arq.", 1, 0, "C", True)
+                pdf.cell(104, 5, "Clima de Trânsito / Análise", 1, 1, "L", True)
+
+                pdf.set_font("helvetica", "", 8)
+                mandala_dados = st.session_state.get("mandala_calculada", {})
+                for k_casa, d_val in mandala_dados.items():
+                    pdf.cell(12, 5, k_casa.replace("Casa ", ""), 1, 0, "C")
+                    pdf.cell(38, 5, f"{d_val.get('signo', '')} ({d_val.get('grau', '')})", 1, 0, "L")
+                    pdf.cell(18, 5, str(d_val.get('nota_base', '')), 1, 0, "C")
+                    pdf.cell(18, 5, f"{d_val.get('peso', '')}x", 1, 0, "C")
+                    pdf.cell(104, 5, f"{d_val.get('clima', '')}", 1, 1, "L")
+                pdf.ln(3)
+
+                # 6. Cruzamento entre Tarot, Arquétipo e Trânsitos
+                pdf.set_font("helvetica", "B", 9)
+                pdf.cell(0, 6, " 6. CRUZAMENTO INTEGRADO (TAROT X ARQUÉTIPO X TRÂNSITOS)", 0, 1, "L", True)
+                pdf.set_font("helvetica", "", 8)
+                map_c = [
+                    (1, "Hard Skills", 6, "Casa 6 (Trabalho/Rotina)"),
+                    (2, "Soft Skills", 3, "Casa 3 (Comunicação)"),
+                    (3, "Fit Cultural", 11, "Casa 11 (Grupos)"),
+                    (4, "Desafios", 12, "Casa 12 (Inconsciente)"),
+                    (5, "Potencial Liderança", 10, "Casa 10 (Carreira)"),
+                    (6, "Equilíbrio Emocional", 4, "Casa 4 (Base)"),
+                    (7, "Saúde Psicológica", 1, "Casa 1 (Self)"),
+                    (8, "Confiabilidade", 8, "Casa 8 (Compliance)")
+                ]
+                for tn, tnom, an, adesc in map_c:
+                    s_info = "Não calculado"
+                    clima_info = ""
+                    if f"Casa {an}" in mandala_dados:
+                        d_casa = mandala_dados[f"Casa {an}"]
+                        s_info = f"{d_casa['signo']} (Peso: {d_casa['peso']}x)"
+                        clima_info = f" | {d_casa['clima']}"
+                    pdf.cell(0, 4, f"• {tnom} (Tarot Casa {tn}) <-> {adesc}: Cúspide: {s_info}{clima_info}", 0, 1)
+
                 res = pdf.output(dest="S")
                 return res.encode("latin1") if isinstance(res, str) else bytes(res)
 
