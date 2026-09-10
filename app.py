@@ -112,17 +112,6 @@ ALERTAS_IMATURIDADE = {
     6: ["Cavaleiro de Paus"], 7: ["Cavaleiro de Ouros"], 8: ["Pajem de Copas"],
 }
 
-OBS_MAP = {
-    1: "Apresenta padrão esperado para condução das rotinas e competências técnicas atribuídas.",
-    2: "Boa capacidade de comunicação e integração colaborativa com o time.",
-    3: "Alinhamento adequado aos valores e princípios coletivos da organização.",
-    4: "Gerenciamento funcional dos pontos cegos e riscos operacionais.",
-    5: "Projeção consistente de autonomia e entregas de médio e longo prazo.",
-    6: "Estabilidade emocional adequada para absorção das demandas sob pressão.",
-    7: "Foco cognitivo preservado e boa resiliência frente a cenários de exaustão.",
-    8: "Comprometimento ético satisfatório e respeito aos acordos firmados.",
-}
-
 def calcular_nota_metodologica(casa_num, c_cent, c_neg, c_pos):
     nota_base = 3
     cent_limpo = str(c_cent).strip().lower() if c_cent else ""
@@ -202,6 +191,8 @@ def disparar_nova_avaliacao():
         del st.session_state["mandala_calculada"]
     if "big_three_calculado" in st.session_state:
         del st.session_state["big_three_calculado"]
+    if "transitos_calculados" in st.session_state:
+        del st.session_state["transitos_calculados"]
     for i in range(1, 9):
         st.session_state[f"t_central_{i}"] = ""
         st.session_state[f"t_negativa_{i}"] = ""
@@ -209,14 +200,14 @@ def disparar_nova_avaliacao():
         st.session_state[f"t_pontos_{i}"] = 3
     st.rerun()
 
-st.title("Sistema de Diagnóstico Corporativo Dinâmico: Tarot & Astrologia Ponderada")
+st.title("Sistema de Diagnóstico Corporativo Dinâmico: Tarot & Astrologia Ponderada com Trânsitos")
 st.markdown(
-    "Plataforma avançada com classificação semântica de cargos, pesos dinâmicos por arquétipo de vaga e motor astronômico real (Kerykeion)."
+    "Plataforma avançada com classificação semântica de cargos, pesos dinâmicos por arquétipo, trânsitos celestes atuais e motor astronômico real (Kerykeion)."
 )
 
 tab1, tab2, tab3 = st.tabs([
     "1. Cadastro e Avaliação (Tarot 8 Casas)",
-    "2. Mapeamento Astrológico Dinâmico (12 Casas)",
+    "2. Mapeamento Astrológico & Trânsitos Atuais",
     "3. Ficha de Avaliação e Cruzamento Analítico",
 ])
 
@@ -268,8 +259,7 @@ with tab1:
     with col_c3:
         nivel_hierarquico = st.selectbox("Nível Hierárquico", ["C-Level / Executivo", "Diretor", "Gerente", "Supervisor", "Coordenador", "Especialista / Analista", "Técnico", "Operacional"], key="input_nivel_cand")
 
-    # Detecção automática do arquétipo corporativo
-        arq_nome, arq_pesos = classificar_arquétipo(vaga_cargo)
+    arq_nome, arq_pesos = classificar_arquétipo(vaga_cargo)
     st.info(f"🎯 **Arquétipo Corporativo Detectado Automaticamente:** `{arq_nome}` (Aplicando pesos customizados na Fase 2)")
 
     st.markdown("---")
@@ -321,8 +311,8 @@ with tab1:
     st.info(f"📊 **Resultado Individual da Fase 1 (Tarot):** {total_t1} / 40 pontos ({perc_t1:.1f}% de aderência comportamental)")
 
 with tab2:
-    st.header("Fase 2: Motor Astrológico Ponderado por Arquétipo de Vaga")
-    st.markdown(f"**Arquétipo Ativo:** `{arq_nome}` — As 12 casas astrológicas recebem pesos diferenciados conforme a prioridade da cadeira.")
+    st.header("Fase 2: Motor Astrológico Ponderado & Trânsitos Atuais")
+    st.markdown(f"**Arquétipo Ativo:** `{arq_nome}` — Cruzamento de pesos corporativos com as efemérides e trânsitos do ano corrente.")
 
     if not KERYKEION_DISPONIVEL:
         st.warning("⚠️ A biblioteca **kerykeion** não foi detectada.")
@@ -335,23 +325,23 @@ with tab2:
         hora_nasc = st.time_input("Horário de Nascimento", key="astro_hora")
         sistema_casas = st.selectbox("Sistema de Casas", ["Plácidus", "Koch", "Signo Inteiro"], key="astro_sistema")
 
-    def calcular_mandala_ponderada(d_nasc_str, h_nasc, loc, pesos_dict):
+    def calcular_mandala_ponderada_com_transitos(d_nasc_str, h_nasc, loc, pesos_dict):
         if not d_nasc_str or h_nasc is None or not loc or not loc.strip():
             st.error("⚠️ Preencha Data, Horário e Local de Nascimento.")
-            return None, None
+            return None, None, {}
 
         digits = "".join(filter(str.isdigit, d_nasc_str))
         if len(digits) != 8:
             st.error("❌ Formato de data inválido.")
-            return None, None
+            return None, None, {}
 
         try:
             d_nasc = datetime.strptime(digits, "%d%m%Y").date()
         except ValueError:
             st.error("❌ Data inválida.")
-            return None, None
+            return None, None, {}
 
-        geolocator = Nominatim(user_agent="rh_astrology_dinamico_v1")
+        geolocator = Nominatim(user_agent="rh_astrology_dinamico_v2")
         lat, lon = None, None
         try:
             loc_obj = geolocator.geocode(loc)
@@ -359,10 +349,14 @@ with tab2:
                 lat, lon = loc_obj.latitude, loc_obj.longitude
             else:
                 st.error(f"❌ Coordenadas não encontradas para '{loc}'.")
-                return None, None
+                return None, None, {}
         except Exception as e:
             st.error(f"❌ Erro de geolocalização: {e}")
-            return None, None
+            return None, None, {}
+
+        casas_res = {}
+        big_three = {}
+        transitos_info = {}
 
         if KERYKEION_DISPONIVEL:
             try:
@@ -371,6 +365,14 @@ with tab2:
                     hour=h_nasc.hour, minute=h_nasc.minute, city=loc, nation="BR",
                     lat=lat, lng=lon, tz_str="America/Sao_Paulo",
                 )
+                
+                agora = datetime.now()
+                transit_subject = AstrologicalSubject(
+                    name="Transitos_Correntes", year=agora.year, month=agora.month, day=agora.day,
+                    hour=agora.hour, minute=agora.minute, city=loc, nation="BR",
+                    lat=lat, lng=lon, tz_str="America/Sao_Paulo",
+                )
+
                 def extrair_signo_grau(obj_attr):
                     if not obj_attr:
                         return "Desconhecido", 0.0
@@ -392,12 +394,18 @@ with tab2:
                     "Lunar": {"signo": moon_s, "grau": f"{int(moon_p % 30)}° {int((moon_p % 1) * 60)}'"},
                 }
 
-                casas_res = {}
+                planetas_transito = {
+                    "Júpiter (Expansão)": extrair_signo_grau(getattr(transit_subject, "jupiter", None))[0],
+                    "Saturno (Estrutura/Cobrança)": extrair_signo_grau(getattr(transit_subject, "saturn", None))[0],
+                    "Urano (Inovação/Mudança)": extrair_signo_grau(getattr(transit_subject, "uranus", None))[0]
+                }
+
                 house_attrs = [
                     "first_house", "second_house", "third_house", "fourth_house",
                     "fifth_house", "sixth_house", "seventh_house", "eighth_house",
                     "ninth_house", "tenth_house", "eleventh_house", "twelfth_house",
                 ]
+                
                 for i, attr in enumerate(house_attrs, start=1):
                     if hasattr(subject, attr):
                         signo, pos = extrair_signo_grau(getattr(subject, attr))
@@ -405,21 +413,38 @@ with tab2:
                         signo, pos = "Desconhecido", 0.0
 
                     nota_base_casa = calcular_nota_astrologica_casa(i, signo)
-                    peso_casa = pesos_dict.get(i, 1.0)
+                    peso_arq = pesos_dict.get(i, 1.0)
                     
+                    fator_transito = 1.0
+                    clima_transito = "Estável"
+                    for p_nome, p_sig in planetas_transito.items():
+                        if p_sig == signo:
+                            if "Júpiter" in p_nome:
+                                fator_transito = 1.15
+                                clima_transito = "✨ Ativado por Júpiter (Ciclo de Crescimento)"
+                            elif "Saturno" in p_nome:
+                                fator_transito = 0.90
+                                clima_transito = "🛡️ Ativado por Saturno (Ciclo de Reestruturação e Rigor)"
+                            elif "Urano" in p_nome:
+                                fator_transito = 1.10
+                                clima_transito = "⚡ Ativado por Urano (Ciclo de Inovação e Ruptura)"
+
+                    nota_final_calculada = min(5.0, nota_base_casa * fator_transito)
+
                     casas_res[f"Casa {i}"] = {
                         "signo": signo,
                         "grau": f"{int(pos % 30)}° {int((pos % 1) * 60)}'",
-                        "nota_base": nota_base_casa,
-                        "peso": peso_casa,
-                        "analise": f"Signo: {signo} | Nota Base: {nota_base_casa}/5 | Peso Arquétipo: {peso_casa}x",
+                        "nota_base": round(nota_final_calculada, 1),
+                        "peso": peso_arq,
+                        "clima": clima_transito,
+                        "analise": f"Signo: {signo} | Nota Trânsito: {nota_final_calculada:.1f}/5 | Arquétipo: {peso_arq}x",
                     }
-                return casas_res, big_three
-            except Exception as e:
-                st.error(f"Erro no cálculo Kerykeion: {e}")
-                return None, None
+                return casas_res, big_three, planetas_transito
 
-        # Fallback determinístico
+            except Exception as e:
+                st.error(f"Erro no cálculo de trânsitos Kerykeion: {e}")
+                return None, None, {}
+
         signos = ["Áries", "Touro", "Gêmeos", "Câncer", "Leão", "Virgem", "Libra", "Escorpião", "Sagitário", "Capricórnio", "Aquário", "Peixes"]
         seed = d_nasc.toordinal() + int(h_nasc.hour * 60 + h_nasc.minute)
         big_three = {
@@ -434,18 +459,19 @@ with tab2:
             p = pesos_dict.get(c, 1.0)
             casas_res[f"Casa {c}"] = {
                 "signo": sig, "grau": "10°", "nota_base": nb, "peso": p,
-                "analise": f"Signo: {sig} | Nota Base: {nb}/5 | Peso: {p}x"
+                "clima": "Estável", "analise": f"Signo: {sig} | Nota Base: {nb}/5 | Peso: {p}x"
             }
-        return casas_res, big_three
+        return casas_res, big_three, {}
 
-    if st.button("Processar Mandala Ponderada por Arquétipo"):
-        with st.spinner("Calculando efemérides e aplicando matriz de pesos..."):
-            mandala, big_three = calcular_mandala_ponderada(data_nasc_raw, hora_nasc, local_nasc, arq_pesos)
+    if st.button("Processar Mandala Ponderada & Trânsitos Atuais"):
+        with st.spinner("Calculando efemérides natais, trânsitos atuais e aplicando matrizes..."):
+            mandala, big_three, transitos = calcular_mandala_ponderada_com_transitos(data_nasc_raw, hora_nasc, local_nasc, arq_pesos)
             if mandala and big_three:
                 st.session_state["mandala_calculada"] = mandala
                 st.session_state["big_three_calculado"] = big_three
+                st.session_state["transitos_calculados"] = transitos
                 st.session_state["arq_utilizado"] = arq_nome
-                st.success("Mapeamento astrológico dinâmico concluído com sucesso!")
+                st.success("Mapeamento astrológico e conjuntural concluído com sucesso!")
 
     if "mandala_calculada" in st.session_state:
         if "big_three_calculado" in st.session_state:
@@ -457,16 +483,23 @@ with tab2:
             with cb3: st.metric("Signo Lunar", b3['Lunar']['signo'], b3['Lunar']['grau'])
             st.markdown("")
 
+        if "transitos_calculados" in st.session_state and st.session_state["transitos_calculados"]:
+            st.markdown("### 🌐 Clima Planetário em Trânsito (Ano Corrente)")
+            t_cols = st.columns(len(st.session_state["transitos_calculados"]))
+            for idx, (p_nome, p_sig) in enumerate(st.session_state["transitos_calculados"].items()):
+                with t_cols[idx]:
+                    st.metric(p_nome, p_sig)
+            st.markdown("")
+
         mandala_items = list(st.session_state["mandala_calculada"].items())
         
-        # Cálculo ponderado normalizado para escala de 60 pontos
         soma_ponderada = sum([v["nota_base"] * v["peso"] for k, v in mandala_items])
         soma_pesos = sum([v["peso"] for k, v in mandala_items])
         media_ponderada = soma_ponderada / soma_pesos if soma_pesos > 0 else 4.0
         total_t2_ajustado = media_ponderada * 12
         perc_t2 = (total_t2_ajustado / 60.0) * 100
 
-        st.info(f"🌟 **Resultado Ponderado da Fase 2 ({st.session_state.get('arq_utilizado', 'Padrão')}):** {total_t2_ajustado:.1f} / 60 pontos ({perc_t2:.1f}% de aderência estrutural ajustada à vaga)")
+        st.info(f"🌟 **Resultado Ponderado & Conjuntural da Fase 2 ({st.session_state.get('arq_utilizado', 'Padrão')}):** {total_t2_ajustado:.1f} / 60 pontos ({perc_t2:.1f}% de aderência estrutural ajustada ao momento)")
         st.markdown("")
 
         for idx_linha in range(0, len(mandala_items), 3):
@@ -476,15 +509,15 @@ with tab2:
                     k, v = mandala_items[idx_linha + col_idx]
                     with cols_grid[col_idx]:
                         with st.container(border=True):
-                            st.markdown(f"**{k}** *(Base: {v['nota_base']} | Peso: {v['peso']}x)*")
+                            st.markdown(f"**{k}** *(Base/Trânsito: {v['nota_base']} | Peso: {v['peso']}x)*")
                             st.markdown(f"### {v['signo']} `({v['grau']})`")
-                            st.caption(v['analise'])
+                            st.caption(f"{v['clima']} — {v['analise']}")
     else:
-        st.info("Processe a mandala astrológica para visualizar o resultado ponderado.")
+        st.info("Processe a mandala astrológica para visualizar o resultado ponderado e os trânsitos.")
 
 with tab3:
     st.header("Fase 3: FICHA DE AVALIAÇÃO INTEGRADA E PONDERADA")
-    st.markdown("Governança final cruzando o Tarot, a Astrologia Ponderada pelo Arquétipo da Vaga e o Índice Global.")
+    st.markdown("Governança final cruzando o Tarot, a Astrologia Ponderada por Arquétipo e Momentos de Trânsito.")
 
     if st.button("Gerar Ficha de Avaliação Integrada"):
         st.session_state["ficha_gerada"] = True
@@ -528,7 +561,7 @@ with tab3:
 
         cr1, cr2, cr3 = st.columns(3)
         with cr1: st.metric("Fase 1 (Tarot)", f"{total_t1} / 40", f"{perc_t1:.1f}%")
-        with cr2: st.metric("Fase 2 (Astrologia Ponderada)", f"{total_t2_ajustado:.1f} / 60", f"{perc_t2:.1f}%")
+        with cr2: st.metric("Fase 2 (Astrologia Ponderada & Trânsitos)", f"{total_t2_ajustado:.1f} / 60", f"{perc_t2:.1f}%")
         with cr3: st.metric("Índice Global Integrado", f"{indice_global:.1f}%")
 
         st.markdown(f"**Classificação Final:** {classificacao}")
@@ -547,15 +580,15 @@ with tab3:
             fig.update_layout(polar=dict(radialaxis=dict(visible=True, range=[0, 5], dtick=1), bgcolor="rgba(22, 26, 29, 0.6)"), paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", height=380, showlegend=False)
             st.plotly_chart(fig, use_container_width=True)
 
-            st.markdown("### Parecer Técnico Dinâmico")
-            st.write(f"Avaliação direcionada ao arquétipo **{arq_ativo_ficha}** para a posição de **{c_vaga}**. O cruzamento aponta **{perc_t1:.1f}%** na Fase 1 e **{perc_t2:.1f}%** na Fase 2 ponderada, resultando em um **Índice Global de {indice_global:.1f}%** (*{classificacao}*).")
+            st.markdown("### Parecer Técnico Dinâmico & Conjuntural")
+            st.write(f"Avaliação direcionada ao arquétipo **{arq_ativo_ficha}** para a posição de **{c_vaga}**. O cruzamento integra a análise comportamental e o ciclo conjuntural ativo de trânsitos, resultando em um **Índice Global de {indice_global:.1f}%** (*{classificacao}*).")
 
             def gerar_pdf_dinamico():
                 pdf = FPDF()
                 pdf.add_page()
                 pdf.set_auto_page_break(auto=True, margin=15)
                 pdf.set_font("helvetica", "B", 11)
-                pdf.cell(0, 7, "DIAGNOSTICO CORPORATIVO DINAMICO - LAUDO PONDERADO", 0, 1, "C")
+                pdf.cell(0, 7, "DIAGNOSTICO CORPORATIVO DINAMICO - LAUDO PONDERADO COM TRANSITOS", 0, 1, "C")
                 pdf.set_font("helvetica", "", 8)
                 pdf.cell(0, 4, f"Arquétipo Aplicado: {arq_ativo_ficha}", 0, 1, "C")
                 pdf.ln(3)
@@ -585,17 +618,17 @@ with tab3:
 
             col_a1, col_a2 = st.columns(2)
             with col_a1:
-                st.download_button("📄 Baixar Laudo Ponderado em PDF", data=gerar_pdf_dinamico(), file_name=f"Laudo_Dinamico_{c_nome.replace(' ', '_')}.pdf", mime="application/pdf")
+                st.download_button("📄 Baixar Laudo Ponderado com Trânsitos em PDF", data=gerar_pdf_dinamico(), file_name=f"Laudo_Transitos_{c_nome.replace(' ', '_')}.pdf", mime="application/pdf")
             with col_a2:
                 if st.button("💾 Salvar no Banco Dinâmico (SQLite)"):
                     if c_nome in ["", "Candidato(a)"]:
                         st.error("Informe um nome de candidato válido.")
                     else:
                         ok = salvar_no_banco(c_nome, vaga_cargo, nivel_hierarquico, data_atual, int(indice_global), classificacao, sinal_vermelho, arq_ativo_ficha)
-                        if ok: st.success("✅ Salvo com sucesso no banco de dados do projeto dinâmico!")
+                        if ok: st.success("✅ Salvo com sucesso no banco de dados!")
 
         with sub_t2:
-            st.markdown("### Cruzamento entre Tarot e Astrologia Ponderada")
+            st.markdown("### Cruzamento entre Tarot, Arquétipo e Trânsitos")
             map_c = [
                 (1, "Hard Skills", 6, "Casa 6 (Trabalho/Rotina)"),
                 (2, "Soft Skills", 3, "Casa 3 (Comunicação)"),
@@ -608,10 +641,12 @@ with tab3:
             ]
             for tn, tnom, an, adesc in map_c:
                 s_info = "Não calculado"
+                clima_info = ""
                 if f"Casa {an}" in mandala_dados:
                     d_casa = mandala_dados[f"Casa {an}"]
                     s_info = f"{d_casa['signo']} (Peso: {d_casa['peso']}x)"
-                st.write(f"- **{tnom} (Tarot Casa {tn})** $\leftrightarrow$ **{adesc}**: Signo cuspide: **{s_info}**")
+                    clima_info = f" | {d_casa['clima']}"
+                st.write(f"- **{tnom} (Tarot Casa {tn})** $\leftrightarrow$ **{adesc}**: Cúspide: **{s_info}**{clima_info}")
 
         with sub_t3:
             with sqlite3.connect("rh_diagnostico_dinamico.db") as conn_db:
