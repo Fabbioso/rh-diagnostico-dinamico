@@ -58,7 +58,17 @@ def calcular_nota_astrologica_casa(casa_num, signo_nome):
         return 5
     return 4
 
-def classificar_arquétipo(vaga_texto):
+def classificar_arquétipo_manual(vaga_texto, selecao_manual="Automático (Detectado por IA)"):
+    if selecao_manual != "Automático (Detectado por IA)":
+        pesos_map = {
+            "Inovação, Estratégia e Expansão": {1: 1.2, 2: 0.9, 3: 1.0, 4: 0.9, 5: 1.5, 6: 0.8, 7: 1.0, 8: 0.8, 9: 1.5, 10: 1.3, 11: 1.3, 12: 1.0},
+            "Governança, Compliance e Riscos": {1: 0.9, 2: 1.4, 3: 1.0, 4: 1.2, 5: 0.8, 6: 1.4, 7: 1.3, 8: 1.5, 9: 0.9, 10: 1.1, 11: 1.0, 12: 1.4},
+            "Operações, Processos e Manutenção": {1: 1.0, 2: 1.3, 3: 0.9, 4: 1.1, 5: 0.8, 6: 1.5, 7: 1.0, 8: 1.2, 9: 0.8, 10: 1.4, 11: 0.9, 12: 1.0},
+            "Comercial, Negócios e Relacionamento": {1: 1.1, 2: 1.0, 3: 1.5, 4: 0.8, 5: 1.2, 6: 0.9, 7: 1.5, 8: 1.0, 9: 1.1, 10: 1.0, 11: 1.4, 12: 0.9},
+            "Padrão / Geral": {i: 1.0 for i in range(1, 13)}
+        }
+        return selecao_manual, pesos_map.get(selecao_manual, {i: 1.0 for i in range(1, 13)})
+
     if not vaga_texto or not vaga_texto.strip():
         return "Padrão / Geral", {i: 1.0 for i in range(1, 13)}
     
@@ -67,22 +77,22 @@ def classificar_arquétipo(vaga_texto):
     termos_inovacao = [
         "inovação", "inovacao", "estratégia", "estrategia", "expansão", "expansao",
         "planejamento", "transformação", "transformacao", "digital", "negócios",
-        "negocios", "head", "diretor", "produtos", "futuro", "marketing"
+        "negocios", "head", "diretor", "produtos", "futuro", "marketing", "tecnologia", "ti", "software", "produto"
     ]
     termos_governanca = [
         "compliance", "auditoria", "jurídico", "juridico", "risco", "riscos",
         "controladoria", "governança", "governanca", "financeiro", "regulatório",
-        "regulatorio", "processos", "contábil", "contabil", "qualidade", "segurança"
+        "regulatorio", "processos", "contábil", "contabil", "qualidade", "segurança", "adm", "administrativo", "rh", "pessoal"
     ]
     termos_operacoes = [
         "operação", "operacao", "produção", "producao", "manutenção", "manutencao",
         "logística", "logistica", "planta", "fábrica", "fabrica", "engenharia",
-        "industrial", "supply", "cadeia", "campo", "execução", "execucao"
+        "industrial", "supply", "cadeia", "campo", "execução", "execucao", "facilities", "alojamento"
     ]
     termos_comercial = [
         "comercial", "vendas", "negócios", "negocios", "account", "cliente",
         "mercado", "expansão de contas", "relacionamento", "parcerias", "key account",
-        "business development", "sucesso do cliente", "cs"
+        "business development", "sucesso do cliente", "cs", "atendimento", "varejo"
     ]
     
     score_inov = sum(1 for t in termos_inovacao if t in txt)
@@ -228,7 +238,7 @@ def disparar_nova_avaliacao():
 
 st.title("Sistema de Diagnóstico Corporativo Dinâmico: Tarot & Astrologia Ponderada com Trânsitos")
 st.markdown(
-    "Plataforma avançada com classificação semântica de cargos, pesos dinâmicos por arquétipo (4 pilares), trânsitos celestes atuais e motor astronômico real (Kerykeion)."
+    "Plataforma avançada com classificação semântica inteligente, 4 pilares de arquétipos corporativos, override manual, trânsitos atuais e Kerykeion."
 )
 
 tab1, tab2, tab3 = st.tabs([
@@ -285,8 +295,21 @@ with tab1:
     with col_c3:
         nivel_hierarquico = st.selectbox("Nível Hierárquico", ["C-Level / Executivo", "Diretor", "Gerente", "Supervisor", "Coordenador", "Especialista / Analista", "Técnico", "Operacional"], key="input_nivel_cand")
 
-    arq_nome, arq_pesos = classificar_arquétipo(vaga_cargo)
-    st.info(f"🎯 **Arquétipo Corporativo Detectado Automaticamente:** `{arq_nome}` (Aplicando pesos customizados na Fase 2)")
+    modo_arq_input = st.selectbox(
+        "Ajuste de Arquétipo (Automático ou Forçado)",
+        [
+            "Automático (Detectado por IA)",
+            "Inovação, Estratégia e Expansão",
+            "Governança, Compliance e Riscos",
+            "Operações, Processos e Manutenção",
+            "Comercial, Negócios e Relacionamento",
+            "Padrão / Geral"
+        ],
+        key="select_override_arq"
+    )
+
+    arq_nome, arq_pesos = classificar_arquétipo_manual(vaga_cargo, modo_arq_input)
+    st.info(f"🎯 **Arquétipo Corporativo Ativo:** `{arq_nome}` (Aplicando pesos customizados na Fase 2)")
 
     st.markdown("---")
     st.subheader("Modo de Geração da Leitura das Cartas")
