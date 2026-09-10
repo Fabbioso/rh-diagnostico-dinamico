@@ -66,7 +66,7 @@ def classificar_arquétipo(vaga_texto):
     termos_inovacao = [
         "inovação", "inovacao", "estratégia", "estrategia", "expansão", "expansao",
         "planejamento", "transformação", "transformacao", "digital", "negócios",
-        "negocios", "head", "diretor", "produtos", "futuro"
+        "negocios", "head", "diretor", "produtos", "futuro", "marketing"
     ]
     termos_governanca = [
         "compliance", "auditoria", "jurídico", "juridico", "risco", "riscos",
@@ -587,31 +587,62 @@ with tab3:
                 pdf = FPDF()
                 pdf.add_page()
                 pdf.set_auto_page_break(auto=True, margin=15)
-                pdf.set_font("helvetica", "B", 11)
-                pdf.cell(0, 7, "DIAGNOSTICO CORPORATIVO DINAMICO - LAUDO PONDERADO COM TRANSITOS", 0, 1, "C")
-                pdf.set_font("helvetica", "", 8)
-                pdf.cell(0, 4, f"Arquétipo Aplicado: {arq_ativo_ficha}", 0, 1, "C")
-                pdf.ln(3)
-                pdf.set_font("helvetica", "B", 9)
-                pdf.cell(0, 5, f"Candidato(a): {c_nome}", 0, 1)
-                pdf.cell(0, 5, f"Cargo: {c_vaga} | Nível: {c_nivel}", 0, 1)
-                pdf.cell(0, 5, f"Índice Global: {indice_global:.1f}% | {classificacao}", 0, 1)
-                pdf.ln(4)
-                pdf.set_font("helvetica", "B", 8)
-                pdf.cell(8, 5, "Pos", 1, 0, "C", True)
-                pdf.cell(37, 5, "Competencia", 1, 0, "L", True)
-                pdf.cell(12, 5, "Nota", 1, 0, "C", True)
-                pdf.cell(123, 5, "Arcanos", 1, 1, "L", True)
                 
-                competencias_nomes = ["Hard Skills", "Soft Skills", "Fit Cultural", "Desafios", "Potencial Futuro", "Equilíbrio Emocional", "Saúde Psicológica", "Confiabilidade e Ética"]
+                # Cabeçalho
+                pdf.set_font("helvetica", "B", 12)
+                pdf.cell(0, 7, "LAUDO DE DIAGNÓSTICO CORPORATIVO DINÂMICO", 0, 1, "C")
+                pdf.set_font("helvetica", "I", 9)
+                pdf.cell(0, 5, "Análise Comportamental, Estrutural e Conjuntural por Trânsitos", 0, 1, "C")
+                pdf.ln(4)
+
+                # Dados do Candidato
+                pdf.set_font("helvetica", "B", 9)
+                pdf.set_fill_color(240, 240, 240)
+                pdf.cell(0, 6, " 1. DADOS GERAIS E ENQUADRAMENTO", 0, 1, "L", True)
+                pdf.set_font("helvetica", "", 9)
+                pdf.cell(0, 5, f"Candidato(a): {c_nome}", 0, 1)
+                pdf.cell(0, 5, f"Cargo Pretendido: {c_vaga} ({c_nivel})", 0, 1)
+                pdf.cell(0, 5, f"Arquétipo Aplicado: {arq_ativo_ficha}", 0, 1)
+                pdf.cell(0, 5, f"Índice Global Integrado: {indice_global:.1f}% - {classificacao}", 0, 1)
+                pdf.ln(3)
+
+                # Resumo Executivo / Parecer
+                pdf.set_font("helvetica", "B", 9)
+                pdf.cell(0, 6, " 2. PARECER EXECUTIVO E MOMENTO CONJUNTURAL", 0, 1, "L", True)
+                pdf.set_font("helvetica", "", 8)
+                parecer_texto = (
+                    f"O candidato apresenta um Índice Global de {indice_global:.1f}%, enquadrando-se na diretriz de "
+                    f"'{classificacao}'. A avaliação cruza a base comportamental do Tarot (Fase 1: {perc_t1:.1f}%) "
+                    f"com o mapa astrológico ponderado pelo arquétipo de {arq_ativo_ficha} e os trânsitos celestes correntes "
+                    f"(Fase 2: {perc_t2:.1f}%). O modelo avalia não apenas a competência estrutural, mas o alinhamento "
+                    f"com os ciclos de expansão ou cobrança ativa no período."
+                )
+                pdf.multi_cell(0, 4, parecer_texto)
+                pdf.ln(3)
+
+                # Tabela de Competências
+                pdf.set_font("helvetica", "B", 9)
+                pdf.cell(0, 6, " 3. MATRIZ DE COMPETÊNCIAS E ARCANOS (FASE 1)", 0, 1, "L", True)
+                pdf.set_font("helvetica", "B", 8)
+                pdf.set_fill_color(220, 220, 220)
+                pdf.cell(8, 5, "Pos", 1, 0, "C", True)
+                pdf.cell(42, 5, "Competência", 1, 0, "L", True)
+                pdf.cell(12, 5, "Nota", 1, 0, "C", True)
+                pdf.cell(128, 5, "Arcano Central / Leitura", 1, 1, "L", True)
+                
+                competencias_nomes = [
+                    "Hard Skills (Técnica)", "Soft Skills (Social)", "Fit Cultural", 
+                    "Desafios (Pontos Cegos)", "Potencial Futuro", "Equilíbrio Emocional", 
+                    "Saúde Psicológica", "Confiabilidade / Ética"
+                ]
                 pdf.set_font("helvetica", "", 8)
                 for i in range(1, 9):
                     c_cent = st.session_state.get(f"t_central_{i}", "-")
                     nota = st.session_state.get(f"t_pontos_{i}", 3)
                     pdf.cell(8, 5, str(i), 1, 0, "C")
-                    pdf.cell(37, 5, competencias_nomes[i-1], 1, 0, "L")
+                    pdf.cell(42, 5, competencias_nomes[i-1], 1, 0, "L")
                     pdf.cell(12, 5, str(nota), 1, 0, "C")
-                    pdf.cell(123, 5, f"Central: {c_cent}", 1, 1, "L")
+                    pdf.cell(128, 5, f"Central: {c_cent}", 1, 1, "L")
                 
                 res = pdf.output(dest="S")
                 return res.encode("latin1") if isinstance(res, str) else bytes(res)
