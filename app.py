@@ -1,13 +1,25 @@
 from datetime import datetime
 import io
 import random
+import re
 import sqlite3
+import unicodedata
 from fpdf import FPDF
 from geopy.geocoders import Nominatim
 import pandas as pd
 import plotly.graph_objects as go
 import pytz
 import streamlit as st
+
+try:
+    from google import genai
+    if "GEMINI_API_KEY" in st.secrets:
+        gemini_client = genai.Client(api_key=st.secrets["GEMINI_API_KEY"])
+        GEMINI_API_DISPONIVEL = True
+    else:
+        GEMINI_API_DISPONIVEL = False
+except Exception:
+    GEMINI_API_DISPONIVEL = False
 
 try:
     from kerykeion import AstrologicalSubject
@@ -51,12 +63,99 @@ PREFERENCIA_ELEMENTO_CASA = {
     12: ["Água"]
 }
 
+SYSTEM_PROMPT_RH = """
+Você é um especialista em psicologia organizacional e estrategista de RH sênior. 
+Sua tarefa é redigir a análise qualitativa (Análise do Jogo) completa para a Ficha de Avaliação de Recrutamento corporativo baseada no método de tiragem estruturada de 3 cartas por competência.
+
+Diretrizes obrigatórias:
+1. Mantenha um tom estritamente corporativo, analítico, neutro e executivo.
+2. NUNCA utilize jargões místicos, esotéricos ou religiosos. Trate os símbolos como arquétipos de comportamento humano, padrões cognitivos e dinâmicas de trabalho.
+3. É OBRIGATÓRIO incluir a análise detalhada de TODAS AS 8 COMPETÊNCIAS na sequência exata: 
+   1. Hard Skills, 2. Soft Skills, 3. Fit Cultural, 4. Desafios, 5. Potencial Futuro, 6. Equilíbrio Emocional, 7. Saúde Psicológica e 8. Confiabilidade e Ética. Não omita nenhuma posição.
+4. Para cada competência, utilize obrigatoriamente e de forma explícita os seguintes termos para estruturar a análise:
+   - Carta Central
+   - Carta Negativa
+   - Carta Positiva
+   É terminantemente proibido o uso de nomenclaturas alternativas como "Padrao Central" ou "Ponto de Fricção".
+5. Conclua com uma seção de CONCLUSÃO avaliando a adequação geral do perfil para a vaga.
+6. Escreva de forma limpa, evitando formatações complexas em Markdown ou LaTeX ($) para facilitar a exportação em PDF.
+"""
+
 def calcular_nota_astrologica_casa(casa_num, signo_nome):
     elemento_signo = ELEMENTOS_SIGNOS.get(signo_nome, "Terra")
     prefs = PREFERENCIA_ELEMENTO_CASA.get(casa_num, ["Terra"])
     if elemento_signo in prefs:
         return 5
     return 4
+
+def remover_acentos(texto):
+    if not texto:
+        return ""
+    nfkd = unicodedata.normalize('NFKD', str(texto))
+    return "".join([c for c in nfkd if not unicodedata.combining(c)]).lower()
+
+def sanitizar_pdf(texto):
+    if not texto:
+        return ""
+    texto = str(texto).replace("°", " deg ").replace("—", "-").replace("–", "-")
+    texto = texto.replace("**", "").replace("###", "").replace("##", "").replace("#", "").replace("*", "").replace("$", "")
+    texto = texto.replace("☐", "").replace("☑", "").replace("☒", "")
+    try:
+        return texto.encode('latin-1', 'replace').decode('latin-1')
+    except Exception:
+        return str(texto)
+
+def obter_ou_gerar_analise_ia(c_nome, c_vaga, arq_ativo):
+    cache_key = f"ai_analise_{c_nome}_{c_vaga}"
+    if cache_key in st.session_state:
+        return st.session_state[cache_key]
+    
+    dados_casas = {}
+    competencias_nomes = [
+        "Hard Skills", "Soft Skills", "Fit Cultural", 
+        "Desafios", "Potencial Futuro", "Equilíbrio Emocional", 
+        "Saúde Psicológica", "Confiabilidade e Ética"
+    ]
+    for i in range(1, 9):
+        dados_casas[i] = {
+            "titulo": competencias_nomes[i-1],
+            "central": st.session_state.get(f"t_central_{i}", "Não informada"),
+            "negativa": st.session_state.get(f"t_negativa_{i}", "Não informada"),
+            "positiva": st.session_state.get(f"t_positiva_{i}", "Não informada"),
+            "nota": st.session_state.get(f"t_pontos_{i}", 3)
+        }
+
+    if GEMINI_API_DISPONIVEL:
+        try:
+            prompt_usuario = f"""
+            Gere a Análise do Jogo detalhada e o Parecer Final para o seguinte processo seletivo:
+            - Candidato(a): {c_nome or 'Candidato'}
+            - Vaga/Cargo: {c_vaga or 'Geral'}
+            - Arquétipo Organizacional Ativo: {arq_ativo}
+
+            Cartas sorteadas e notas por competência nas 8 posições:
+            """
+            for num, d in dados_casas.items():
+                prompt_usuario += f"\n- Casa {num} ({d['titulo']} - Nota {d['nota']}/5): Carta Central: {d['central']} | Carta Negativa: {d['negativa']} | Carta Positiva: {d['positiva']}"
+            
+            prompt_usuario += "\n\nGaranta a cobertura completa e detalhada da Casa 1 até a Casa 8 utilizando obrigatoriamente os termos Carta Central, Carta Negativa e Carta Positiva, finalizando com a seção de CONCLUSÃO. Não utilize formatação LaTeX como cifrões."
+
+            response = gemini_client.models.generate_content(
+                model="gemini-2.5-flash",
+                contents=prompt_usuario,
+                config=genai.types.GenerateContentConfig(
+                    system_instruction=SYSTEM_PROMPT_RH,
+                    temperature=0.4,
+                    max_output_tokens=8192,
+                ),
+            )
+            texto_gerado = response.text
+            st.session_state[cache_key] = texto_gerado
+            return texto_gerado
+        except Exception as e:
+            return f"Erro ao gerar análise automatizada via IA: {e}"
+    else:
+        return "Análise qualitativa padrão (Configure a GEMINI_API_KEY em st.secrets para habilitar a geração avançada por IA)."
 
 def classificar_arquétipo_manual(vaga_texto, selecao_manual="Automático (Detectado por IA)"):
     if selecao_manual != "Automático (Detectado por IA)":
@@ -72,39 +171,29 @@ def classificar_arquétipo_manual(vaga_texto, selecao_manual="Automático (Detec
     if not vaga_texto or not vaga_texto.strip():
         return "Padrão / Geral", {i: 1.0 for i in range(1, 13)}
     
-    txt = vaga_texto.lower()
+    txt = remover_acentos(vaga_texto)
+    palavras_isoladas = set(re.findall(r'\b\w+\b', txt))
     
-    termos_inovacao = [
-        "inovação", "inovacao", "estratégia", "estrategia", "expansão", "expansao",
-        "planejamento", "transformação", "transformacao", "digital", "negócios",
-        "negocios", "head", "diretor", "produtos", "futuro", "marketing", "tecnologia", "ti", "software", "produto"
-    ]
-    termos_governanca = [
-        "compliance", "auditoria", "jurídico", "juridico", "risco", "riscos",
-        "controladoria", "governança", "governanca", "financeiro", "regulatório",
-        "regulatorio", "processos", "contábil", "contabil", "qualidade", "segurança", "adm", "administrativo", "rh", "pessoal"
-    ]
-    termos_operacoes = [
-        "operação", "operacao", "produção", "producao", "manutenção", "manutencao",
-        "logística", "logistica", "planta", "fábrica", "fabrica", "engenharia",
-        "industrial", "supply", "cadeia", "campo", "execução", "execucao", "facilities", "alojamento"
-    ]
-    termos_comercial = [
-        "comercial", "vendas", "negócios", "negocios", "account", "cliente",
-        "mercado", "expansão de contas", "relacionamento", "parcerias", "key account",
-        "business development", "sucesso do cliente", "cs", "atendimento", "varejo"
-    ]
+    termos_inovacao = ["inovacao", "estrategia", "expansao", "planejamento", "transformacao", "digital", "negocios", "head", "diretor", "produtos", "futuro", "marketing", "tecnologia", "ti", "software", "produto", "pesquisa"]
+    termos_governanca = ["compliance", "auditoria", "juridico", "risco", "riscos", "controladoria", "governanca", "financeiro", "regulatorio", "processos", "contabil", "qualidade", "seguranca", "adm", "administrativo", "rh", "pessoal", "financas", "tesouraria"]
+    termos_operacoes = ["operacao", "operacoes", "producao", "manutencao", "logistica", "planta", "fabrica", "engenharia", "industrial", "supply", "cadeia", "campo", "execucao", "facilities", "almoxarifado", "estoque", "expedicao", "operacional"]
+    termos_comercial = ["comercial", "vendas", "account", "cliente", "mercado", "relacionamento", "parcerias", "key account", "business development", "sucesso do cliente", "cs", "atendimento", "varejo", "contas", "kam"]
     
-    score_inov = sum(1 for t in termos_inovacao if t in txt)
-    score_gov = sum(1 for t in termos_governanca if t in txt)
-    score_op = sum(1 for t in termos_operacoes if t in txt)
-    score_com = sum(1 for t in termos_comercial if t in txt)
-    
+    def pontuar_categoria(lista_termos):
+        pontos = 0
+        for termo in lista_termos:
+            termo_limpo = remover_acentos(termo)
+            if " " in termo_limpo:
+                if termo_limpo in txt: pontos += 1
+            else:
+                if termo_limpo in palavras_isoladas: pontos += 1
+        return pontos
+
     scores = {
-        "Inovação, Estratégia e Expansão": score_inov,
-        "Governança, Compliance e Riscos": score_gov,
-        "Operações, Processos e Manutenção": score_op,
-        "Comercial, Negócios e Relacionamento": score_com
+        "Operações, Processos e Manutenção": pontuar_categoria(termos_operacoes),
+        "Comercial, Negócios e Relacionamento": pontuar_categoria(termos_comercial),
+        "Governança, Compliance e Riscos": pontuar_categoria(termos_governanca),
+        "Inovação, Estratégia e Expansão": pontuar_categoria(termos_inovacao),
     }
     
     maior_score = max(scores.values())
@@ -112,63 +201,38 @@ def classificar_arquétipo_manual(vaga_texto, selecao_manual="Automático (Detec
         return "Padrão / Geral", {i: 1.0 for i in range(1, 13)}
         
     arq_vitorioso = max(scores, key=scores.get)
-    
-    if arq_vitorioso == "Inovação, Estratégia e Expansão":
-        return arq_vitorioso, {1: 1.2, 2: 0.9, 3: 1.0, 4: 0.9, 5: 1.5, 6: 0.8, 7: 1.0, 8: 0.8, 9: 1.5, 10: 1.3, 11: 1.3, 12: 1.0}
-    elif arq_vitorioso == "Governança, Compliance e Riscos":
-        return arq_vitorioso, {1: 0.9, 2: 1.4, 3: 1.0, 4: 1.2, 5: 0.8, 6: 1.4, 7: 1.3, 8: 1.5, 9: 0.9, 10: 1.1, 11: 1.0, 12: 1.4}
-    elif arq_vitorioso == "Operações, Processos e Manutenção":
-        return arq_vitorioso, {1: 1.0, 2: 1.3, 3: 0.9, 4: 1.1, 5: 0.8, 6: 1.5, 7: 1.0, 8: 1.2, 9: 0.8, 10: 1.4, 11: 0.9, 12: 1.0}
-    elif arq_vitorioso == "Comercial, Negócios e Relacionamento":
-        return arq_vitorioso, {1: 1.1, 2: 1.0, 3: 1.5, 4: 0.8, 5: 1.2, 6: 0.9, 7: 1.5, 8: 1.0, 9: 1.1, 10: 1.0, 11: 1.4, 12: 0.9}
-        
-    return "Padrão / Geral", {i: 1.0 for i in range(1, 13)}
+    pesos_finais = {
+        "Inovação, Estratégia e Expansão": {1: 1.2, 2: 0.9, 3: 1.0, 4: 0.9, 5: 1.5, 6: 0.8, 7: 1.0, 8: 0.8, 9: 1.5, 10: 1.3, 11: 1.3, 12: 1.0},
+        "Governança, Compliance e Riscos": {1: 0.9, 2: 1.4, 3: 1.0, 4: 1.2, 5: 0.8, 6: 1.4, 7: 1.3, 8: 1.5, 9: 0.9, 10: 1.1, 11: 1.0, 12: 1.4},
+        "Operações, Processos e Manutenção": {1: 1.0, 2: 1.3, 3: 0.9, 4: 1.1, 5: 0.8, 6: 1.5, 7: 1.0, 8: 1.2, 9: 0.8, 10: 1.4, 11: 0.9, 12: 1.0},
+        "Comercial, Negócios e Relacionamento": {1: 1.1, 2: 1.0, 3: 1.5, 4: 0.8, 5: 1.2, 6: 0.9, 7: 1.5, 8: 1.0, 9: 1.1, 10: 1.0, 11: 1.4, 12: 0.9}
+    }
+    return arq_vitorioso, pesos_finais.get(arq_vitorioso, {i: 1.0 for i in range(1, 13)})
 
-ATIVADORES_NOTA_5 = {
-    1: ["O Mago", "Rei de Ouros", "Rainha de Espadas"],
-    2: ["A Imperatriz", "Rei de Paus", "Rainha de Copas"],
-    3: ["O Hierofante", "Rei de Ouros", "Rainha de Copas"],
-    4: ["O Mundo", "Rei de Ouros", "Rainha de Ouros"],
-    5: ["O Imperador", "Rei de Ouros", "Rainha de Paus"],
-    6: ["A Força", "Rei de Copas", "Rainha de Ouros"],
-    7: ["A Estrela", "Rei de Espadas", "Rainha de Espadas"],
-    8: ["A Justiça", "Rei de Espadas", "Rainha de Ouros"],
-}
-
-FALSOS_POSITIVOS = {
-    1: ["O Pendurado"], 2: ["O Eremita"], 3: ["O Louco"], 4: ["O Sol"],
-    5: ["A Sacerdotisa", "A Papisa"], 6: ["Os Enamorados", "Os Amantes"],
-    7: ["A Temperança"], 8: ["O Carro"],
-}
-
-ALERTAS_IMATURIDADE = {
-    1: ["Pajem de Paus", "Pajem de Ouros", "Pajem de Espadas", "Pajem de Copas"],
-    2: ["Cavaleiro de Espadas"], 3: ["Cavaleiro de Copas"],
-    4: ["Pajem de Ouros"], 5: ["Pajem de Espadas"],
-    6: ["Cavaleiro de Paus"], 7: ["Cavaleiro de Ouros"], 8: ["Pajem de Copas"],
-}
+def obter_nota_por_carta(nome_carta):
+    nome = remover_acentos(nome_carta)
+    if not nome: return 3
+    if any(m in nome for m in ["o mago", "a imperatriz", "o hierofante", "o imperador", "a forca", "a estrela", "a justica", "o mundo", "rei de", "rainha de"]): return 5
+    if any(m in nome for m in ["o pendurado", "o eremita", "o louco", "o sol", "a sacerdoti", "a papisa", "os enamorados", "os amantes", "a temperanca", "o carro"]): return 2
+    if any(c in nome for c in ["pajem de", "cavaleiro de"]): return 1
+    if "o julgamento" in nome: return 4
+    if any(m in nome for m in ["a morte", "a lua"]): return 2
+    if "a roda da fortuna" in nome: return 3
+    if "as de" in nome: return 5
+    if any(n in nome for n in ["10 de paus", "10 de espadas", "5 de ouros"]): return 1
+    if any(n in nome for n in ["8 de", "9 de", "10 de"]): return 4
+    if any(n in nome for n in ["5 de", "7 de"]): return 2
+    if any(n in nome for n in ["2 de", "3 de", "4 de", "6 de"]): return 3
+    return 3
 
 def calcular_nota_metodologica(casa_num, c_cent, c_neg, c_pos):
-    nota_base = 3
-    cent_limpo = str(c_cent).strip().lower() if c_cent else ""
-    neg_limpo = str(c_neg).strip().lower() if c_neg else ""
-    pos_limpo = str(c_pos).strip().lower() if c_pos else ""
-
-    if any(atrib.lower() in cent_limpo for atrib in ATIVADORES_NOTA_5.get(casa_num, [])):
-        nota_base = 5
-    elif any(fp.lower() in cent_limpo for fp in FALSOS_POSITIVOS.get(casa_num, [])):
-        nota_base = 2
-    elif any(imato.lower() in cent_limpo for imato in ALERTAS_IMATURIDADE.get(casa_num, [])):
-        nota_base = 1
-
-    if casa_num == 1 and any(k in pos_limpo for k in ["ouros", "espadas", "mago"]):
-        if nota_base < 5:
-            nota_base += 1
-
-    if any(k in neg_limpo for k in ["torre", "diabo", "cinco de ouros", "oito de espadas", "nove de espadas", "dez de espadas"]):
-        if nota_base > 1:
-            nota_base -= 1
-
+    nota_base = obter_nota_por_carta(c_cent)
+    neg_limpo = remover_acentos(c_neg)
+    pos_limpo = remover_acentos(c_pos)
+    if casa_num == 1 and any(k in pos_limpo for k in ["ouros", "espadas", "mago", "as de"]):
+        if nota_base < 5: nota_base += 1
+    if any(k in neg_limpo for k in ["torre", "diabo", "cinco de ouros", "oito de espadas", "nove de espadas", "dez de espadas", "dez de paus"]):
+        if nota_base > 1: nota_base -= 1
     return max(1, min(5, nota_base))
 
 def inicializar_banco():
@@ -192,8 +256,7 @@ def inicializar_banco():
 inicializar_banco()
 
 def salvar_no_banco(nome, vaga, nivel, data, pontos, classificacao, sinal_vermelho, arq):
-    if not nome or not nome.strip() or nome.strip() in ["Candidato(a)", "Selecionar Candidato Cadastrado..."]:
-        return False
+    if not nome or not nome.strip() or nome.strip() in ["Candidato(a)", "Selecionar Candidato Cadastrado..."]: return False
     with sqlite3.connect("rh_diagnostico_dinamico.db") as conn:
         cursor = conn.cursor()
         cursor.execute(
@@ -206,14 +269,10 @@ def salvar_no_banco(nome, vaga, nivel, data, pontos, classificacao, sinal_vermel
         conn.commit()
     return True
 
-if "astro_data_raw" not in st.session_state:
-    st.session_state["astro_data_raw"] = "01/01/1999"
-if "astro_local" not in st.session_state:
-    st.session_state["astro_local"] = "São Paulo, SP"
-if "astro_hora" not in st.session_state:
-    st.session_state["astro_hora"] = datetime.strptime("12:00", "%H:%M").time()
-if "input_nome_cand" not in st.session_state:
-    st.session_state["input_nome_cand"] = ""
+if "astro_data_raw" not in st.session_state: st.session_state["astro_data_raw"] = "01/01/1999"
+if "astro_local" not in st.session_state: st.session_state["astro_local"] = "São Paulo, SP"
+if "astro_hora" not in st.session_state: st.session_state["astro_hora"] = datetime.strptime("12:00", "%H:%M").time()
+if "input_nome_cand" not in st.session_state: st.session_state["input_nome_cand"] = ""
 
 def disparar_nova_avaliacao():
     st.session_state["input_nome_cand"] = ""
@@ -223,12 +282,12 @@ def disparar_nova_avaliacao():
     st.session_state["astro_hora"] = datetime.strptime("12:00", "%H:%M").time()
     st.session_state["astro_local"] = "São Paulo, SP"
     st.session_state["ficha_gerada"] = False
-    if "mandala_calculada" in st.session_state:
-        del st.session_state["mandala_calculada"]
-    if "big_three_calculado" in st.session_state:
-        del st.session_state["big_three_calculado"]
-    if "transitos_calculados" in st.session_state:
-        del st.session_state["transitos_calculados"]
+    for key in list(st.session_state.keys()):
+        if key.startswith("ai_analise_"):
+            del st.session_state[key]
+    if "mandala_calculada" in st.session_state: del st.session_state["mandala_calculada"]
+    if "big_three_calculado" in st.session_state: del st.session_state["big_three_calculado"]
+    if "transitos_calculados" in st.session_state: del st.session_state["transitos_calculados"]
     for i in range(1, 9):
         st.session_state[f"t_central_{i}"] = ""
         st.session_state[f"t_negativa_{i}"] = ""
@@ -237,9 +296,7 @@ def disparar_nova_avaliacao():
     st.rerun()
 
 st.title("Sistema de Diagnóstico Corporativo Dinâmico: Tarot & Astrologia Ponderada com Trânsitos")
-st.markdown(
-    "Plataforma avançada com classificação semântica inteligente, 4 pilares de arquétipos corporativos, override manual, trânsitos atuais e Kerykeion."
-)
+st.markdown("Plataforma avançada com classificação semântica inteligente, 4 pilares de arquétipos corporativos, override manual, trânsitos atuais e IA.")
 
 tab1, tab2, tab3 = st.tabs([
     "1. Cadastro e Avaliação (Tarot 8 Casas)",
@@ -348,7 +405,7 @@ with tab1:
         col_alvo = col_esq if num <= 4 else col_dir
         with col_alvo:
             with st.expander(f"Casa {num}: {titulo} — [{base_astro}]"):
-                st.text_input("Arcano Central (Resposta)", key=f"t_central_{num}", placeholder="Ex: O Mago")
+                st.text_input("Carta Central (Resposta)", key=f"t_central_{num}", placeholder="Ex: O Mago")
                 st.text_input("Carta Negativa (Dificuldades)", key=f"t_negativa_{num}", placeholder="Ex: Ás de Ouros")
                 st.text_input("Carta Positiva (Pontos Fortes)", key=f"t_positiva_{num}", placeholder="Ex: 4 de Copas")
                 st.number_input("Nota (1-5)", min_value=1, max_value=5, value=3, key=f"t_pontos_{num}")
@@ -356,8 +413,153 @@ with tab1:
     pontuacoes_t1 = [st.session_state.get(f"t_pontos_{i}", 3) for i in range(1, 9)]
     total_t1 = sum(pontuacoes_t1)
     perc_t1 = (total_t1 / 40.0) * 100
+    
+    p6, p7, p8 = st.session_state.get("t_pontos_6", 3), st.session_state.get("t_pontos_7", 3), st.session_state.get("t_pontos_8", 3)
+    sinal_vermelho_f1 = "Sim" if (p6 <= 2 or p7 <= 2 or p8 <= 2) else "Não"
+    
+    if total_t1 >= 32:
+        classificacao_f1 = "Altamente Recomendado"
+    elif total_t1 >= 24:
+        classificacao_f1 = "Recomendado com Ressalvas"
+    else:
+        classificacao_f1 = "Não Recomendado"
+
     st.markdown("---")
     st.info(f"📊 **Resultado Individual da Fase 1 (Tarot):** {total_t1} / 40 pontos ({perc_t1:.1f}% de aderência comportamental)")
+
+    c_nome_val = nome_candidato if 'nome_candidato' in locals() else st.session_state.get("input_nome_cand", "")
+    cache_key_check = f"ai_analise_{c_nome_val}_{vaga_cargo}"
+    
+    if st.button("🤖 Gerar Análise Qualitativa por IA (Fase 1)"):
+        with st.spinner("Consultando o Gemini para gerar o parecer completo das 8 casas..."):
+            obter_ou_gerar_analise_ia(c_nome_val, vaga_cargo, arq_nome)
+        st.success("Análise gerada e pronta para exportação!")
+
+    def gerar_ficha_pdf_fase1(c_nome, c_vaga, total_pts, classif, sinal_vermelho_val):
+        pdf = FPDF()
+        pdf.add_page()
+        pdf.set_auto_page_break(auto=True, margin=15)
+        
+        pdf.set_font("helvetica", "B", 11)
+        pdf.cell(0, 6, sanitizar_pdf("FICHA DE AVALIAÇÃO PARA RECRUTAMENTO"), 0, 1, "C")
+        pdf.set_font("helvetica", "I", 8)
+        pdf.cell(0, 5, sanitizar_pdf("RELATÓRIO DE AVALIAÇÃO PSICOMÉTRICA E COMPORTAMENTAL (MÉTODO 8 CASAS)"), 0, 1, "C")
+        pdf.ln(4)
+        
+        pdf.set_font("helvetica", "B", 8)
+        pdf.set_fill_color(245, 247, 250)
+        pdf.cell(0, 6, sanitizar_pdf(f"  CANDIDATO(A): {c_nome.upper() if c_nome else 'NÃO INFORMADO'}"), 1, 1, "L", True)
+        pdf.cell(0, 6, sanitizar_pdf(f"  VAGA / CARGO: {c_vaga.upper() if c_vaga else 'NÃO INFORMADA'}          DATA: {datetime.now().strftime('%d/%m/%Y')}"), 1, 1, "L", True)
+        pdf.ln(4)
+        
+        pdf.set_font("helvetica", "B", 8)
+        pdf.set_fill_color(230, 235, 240)
+        pdf.cell(8, 7, "POS", 1, 0, "C", True)
+        pdf.cell(34, 7, "COMPETÊNCIA", 1, 0, "L", True)
+        pdf.cell(64, 7, "CARTAS (CENTRAL / NEGATIVA / POSITIVA)", 1, 0, "L", True)
+        pdf.cell(12, 7, "NOTA", 1, 0, "C", True)
+        pdf.cell(70, 7, "OBSERVAÇÃO TÉCNICA", 1, 1, "L", True)
+        
+        competencias_nomes = [
+            "Hard Skills", "Soft Skills", "Fit Cultural", 
+            "Desafios", "Potencial Futuro", "Equilíbrio Emocional", 
+            "Saúde Psicológica", "Confiabilidade e Ética"
+        ]
+        
+        pdf.set_font("helvetica", "", 7.5)
+        for i in range(1, 9):
+            c_cent = st.session_state.get(f"t_central_{i}", "-")
+            c_neg = st.session_state.get(f"t_negativa_{i}", "-")
+            c_pos = st.session_state.get(f"t_positiva_{i}", "-")
+            nota = st.session_state.get(f"t_pontos_{i}", 3)
+            
+            cartas_txt = f"Central: {c_cent} | Negativa: {c_neg} | Positiva: {c_pos}"
+            obs_txt = f"Análise metodológica baseada no arcano (Nota {nota}/5)."
+            
+            row_h = 15.0
+            pdf.cell(8, row_h, str(i), 1, 0, "C")
+            pdf.cell(34, row_h, sanitizar_pdf(competencias_nomes[i-1]), 1, 0, "L")
+            
+            x_pos_atual = pdf.get_x()
+            y_pos_atual = pdf.get_y()
+            pdf.rect(x_pos_atual, y_pos_atual, 64, row_h)
+            pdf.set_xy(x_pos_atual + 1, y_pos_atual + 1.5)
+            pdf.multi_cell(62, 3.8, sanitizar_pdf(cartas_txt), 0, "L")
+            pdf.set_xy(x_pos_atual + 64, y_pos_atual)
+            
+            pdf.cell(12, row_h, str(nota), 1, 0, "C")
+            pdf.cell(70, row_h, sanitizar_pdf(obs_txt), 1, 1, "L")
+            
+        pdf.ln(4)
+        
+        pdf.set_font("helvetica", "B", 8)
+        pdf.cell(0, 5, sanitizar_pdf(f"PONTUAÇÃO TOTAL: {total_pts} / 40  |  CLASSIFICAÇÃO: {classif}  |  SINAL VERMELHO: {sinal_vermelho_val}"), 0, 1, "L")
+        pdf.ln(2)
+        
+        pdf.set_font("helvetica", "B", 8)
+        pdf.cell(0, 5, sanitizar_pdf("PARECER FINAL DO AVALIADOR:"), 0, 1)
+        pdf.set_font("helvetica", "", 8)
+        parecer_ficha = (
+            f"Perfil avaliado para a vaga de {c_vaga or 'Geral'}. O candidato atinge {total_pts} pontos no total, "
+            f"enquadrando-se na diretriz de '{classif}'. A avaliação reflete o alinhamento comportamental e estrutural mapeado."
+        )
+        pdf.set_fill_color(248, 249, 250)
+        pdf.set_draw_color(200, 205, 210)
+        pdf.multi_cell(0, 5, sanitizar_pdf(parecer_ficha), border=1, fill=True)
+        pdf.ln(6)
+
+        pdf.add_page()
+        pdf.set_font("helvetica", "B", 10)
+        pdf.cell(0, 6, sanitizar_pdf("ANÁLISE QUALITATIVA DAS COMPETÊNCIAS (ANÁLISE DO JOGO)"), 0, 1, "L")
+        pdf.ln(2)
+
+        texto_ia = obter_ou_gerar_analise_ia(c_nome, c_vaga, arq_nome)
+
+        for i in range(1, 9):
+            if pdf.get_y() > 245:
+                pdf.add_page()
+
+            pdf.set_font("helvetica", "B", 8.5)
+            pdf.set_fill_color(240, 243, 246)
+            pdf.set_draw_color(200, 205, 210)
+
+            nota_comp = st.session_state.get(f"t_pontos_{i}", 3)
+            titulo_card = f"  {i}. {competencias_nomes[i-1]} (Nota: {nota_comp}/5)"
+            pdf.cell(0, 5.5, sanitizar_pdf(titulo_card), 1, 1, "L", True)
+
+            c_cent = st.session_state.get(f"t_central_{i}", "-")
+            c_neg = st.session_state.get(f"t_negativa_{i}", "-")
+            c_pos = st.session_state.get(f"t_positiva_{i}", "-")
+
+            cartas_str = f"  Carta Central: {c_cent}   |   Carta Negativa: {c_neg}   |   Carta Positiva: {c_pos}"
+            pdf.set_font("helvetica", "I", 7.5)
+            pdf.cell(0, 4.5, sanitizar_pdf(cartas_str), "LR", 1, "L", False)
+
+            padrao_busca = rf"{i}\.\s*{re.escape(competencias_nomes[i-1])}(.*?)(?=(?:\d+\.\s*[A-ZÀ-Ú]|$))"
+            match = re.search(padrao_busca, texto_ia, re.DOTALL | re.IGNORECASE)
+            if match:
+                conteudo_comp = match.group(1).strip()
+                conteudo_comp = re.sub(r"^[:\-–]\s*", "", conteudo_comp)
+            else:
+                conteudo_comp = f"Análise executiva para {competencias_nomes[i-1]} baseada na tiragem estruturada de arcanos."
+
+            pdf.set_font("helvetica", "", 7.5)
+            pdf.multi_cell(0, 3.8, sanitizar_pdf(conteudo_comp), "LRB", "L", False)
+            pdf.ln(3)
+
+        res = pdf.output(dest="S")
+        return res.encode("latin1") if isinstance(res, str) else bytes(res)
+
+    if cache_key_check in st.session_state:
+        pdf_stream = gerar_ficha_pdf_fase1(c_nome_val, vaga_cargo, total_t1, classificacao_f1, sinal_vermelho_f1)
+        st.download_button(
+            label="📥 Baixar Ficha de Avaliação Completa em PDF",
+            data=pdf_stream,
+            file_name=f"Ficha_Avaliacao_Recrutamento_{(c_nome_val or 'Candidato').replace(' ', '_')}.pdf",
+            mime="application/pdf"
+        )
+    else:
+        st.info("💡 Clique no botão acima **'🤖 Gerar Análise Qualitativa por IA (Fase 1)'** para habilitar o download do PDF completo.")
 
 with tab2:
     st.header("Fase 2: Motor Astrológico Ponderado & Trânsitos Atuais")
@@ -423,8 +625,7 @@ with tab2:
                 )
 
                 def extrair_signo_grau(obj_attr):
-                    if not obj_attr:
-                        return "Desconhecido", 0.0
+                    if not obj_attr: return "Desconhecido", 0.0
                     if isinstance(obj_attr, dict):
                         s = obj_attr.get("sign", "Desconhecido")
                         p = obj_attr.get("position", obj_attr.get("pos", 0.0))
@@ -438,9 +639,9 @@ with tab2:
                 asc_s, asc_p = extrair_signo_grau(getattr(subject, "first_house", None))
 
                 big_three = {
-                    "Solar": {"signo": sun_s, "grau": f"{int(sun_p % 30)}° {int((sun_p % 1) * 60)}'"},
-                    "Ascendente": {"signo": asc_s, "grau": f"{int(asc_p % 30)}° {int((asc_p % 1) * 60)}'"},
-                    "Lunar": {"signo": moon_s, "grau": f"{int(moon_p % 30)}° {int((moon_p % 1) * 60)}'"},
+                    "Solar": {"signo": sun_s, "grau": f"{int(sun_p % 30)} deg {int((sun_p % 1) * 60)}'"},
+                    "Ascendente": {"signo": asc_s, "grau": f"{int(asc_p % 30)} deg {int((asc_p % 1) * 60)}'"},
+                    "Lunar": {"signo": moon_s, "grau": f"{int(moon_p % 30)} deg {int((moon_p % 1) * 60)}'"},
                 }
 
                 planetas_transito = {
@@ -482,7 +683,7 @@ with tab2:
 
                     casas_res[f"Casa {i}"] = {
                         "signo": signo,
-                        "grau": f"{int(pos % 30)}° {int((pos % 1) * 60)}'",
+                        "grau": f"{int(pos % 30)} deg {int((pos % 1) * 60)}'",
                         "nota_base": round(nota_final_calculada, 1),
                         "peso": peso_arq,
                         "clima": clima_transito,
@@ -497,9 +698,9 @@ with tab2:
         signos = ["Áries", "Touro", "Gêmeos", "Câncer", "Leão", "Virgem", "Libra", "Escorpião", "Sagitário", "Capricórnio", "Aquário", "Peixes"]
         seed = d_nasc.toordinal() + int(h_nasc.hour * 60 + h_nasc.minute)
         big_three = {
-            "Solar": {"signo": signos[seed % 12], "grau": "12° 0'"},
-            "Ascendente": {"signo": signos[(seed + 6) % 12], "grau": "8° 15'"},
-            "Lunar": {"signo": signos[(seed + 3) % 12], "grau": "15° 30'"},
+            "Solar": {"signo": signos[seed % 12], "grau": "12 deg 0'"},
+            "Ascendente": {"signo": signos[(seed + 6) % 12], "grau": "8 deg 15'"},
+            "Lunar": {"signo": signos[(seed + 3) % 12], "grau": "15 deg 30'"},
         }
         casas_res = {}
         for c in range(1, 13):
@@ -507,7 +708,7 @@ with tab2:
             nb = calcular_nota_astrologica_casa(c, sig)
             p = pesos_dict.get(c, 1.0)
             casas_res[f"Casa {c}"] = {
-                "signo": sig, "grau": "10°", "nota_base": nb, "peso": p,
+                "signo": sig, "grau": "10 deg", "nota_base": nb, "peso": p,
                 "clima": "Estável", "analise": f"Signo: {sig} | Nota Base: {nb}/5 | Peso: {p}x"
             }
         return casas_res, big_three, {}
@@ -541,7 +742,6 @@ with tab2:
             st.markdown("")
 
         mandala_items = list(st.session_state["mandala_calculada"].items())
-        
         soma_ponderada = sum([v["nota_base"] * v["peso"] for k, v in mandala_items])
         soma_pesos = sum([v["peso"] for k, v in mandala_items])
         media_ponderada = soma_ponderada / soma_pesos if soma_pesos > 0 else 4.0
@@ -637,27 +837,23 @@ with tab3:
                 pdf.add_page()
                 pdf.set_auto_page_break(auto=True, margin=15)
                 
-                # Cabeçalho
                 pdf.set_font("helvetica", "B", 12)
-                pdf.cell(0, 7, "LAUDO DE DIAGNÓSTICO CORPORATIVO DINÂMICO", 0, 1, "C")
+                pdf.cell(0, 7, sanitizar_pdf("LAUDO DE DIAGNÓSTICO CORPORATIVO DINÂMICO"), 0, 1, "C")
                 pdf.set_font("helvetica", "I", 9)
-                pdf.cell(0, 5, "Análise Comportamental, Estrutural e Conjuntural por Trânsitos", 0, 1, "C")
+                pdf.cell(0, 5, sanitizar_pdf("Análise Comportamental, Estrutural e Conjuntural por Trânsitos"), 0, 1, "C")
                 pdf.ln(4)
 
-                # 1. Dados do Candidato
                 pdf.set_font("helvetica", "B", 9)
-                pdf.set_fill_color(240, 240, 240)
-                pdf.cell(0, 6, " 1. DADOS GERAIS E ENQUADRAMENTO", 0, 1, "L", True)
-                pdf.set_font("helvetica", "", 9)
-                pdf.cell(0, 5, f"Candidato(a): {c_nome}", 0, 1)
-                pdf.cell(0, 5, f"Cargo Pretendido: {c_vaga} ({c_nivel})", 0, 1)
-                pdf.cell(0, 5, f"Arquétipo Aplicado: {arq_ativo_ficha}", 0, 1)
-                pdf.cell(0, 5, f"Índice Global Integrado: {indice_global:.1f}% - {classificacao}", 0, 1)
+                pdf.set_fill_color(240, 243, 246)
+                pdf.cell(0, 6, sanitizar_pdf(" 1. DADOS GERAIS E ENQUADRAMENTO"), 1, 1, "L", True)
+                pdf.set_font("helvetica", "", 8.5)
+                pdf.cell(0, 5, sanitizar_pdf(f"  Candidato(a): {c_nome}  |  Cargo: {c_vaga} ({c_nivel})"), 0, 1)
+                pdf.cell(0, 5, sanitizar_pdf(f"  Arquétipo Aplicado: {arq_ativo_ficha}"), 0, 1)
+                pdf.cell(0, 5, sanitizar_pdf(f"  Índice Global Integrado: {indice_global:.1f}% - {classificacao}"), 0, 1)
                 pdf.ln(3)
 
-                # 2. Resumo Executivo / Parecer
                 pdf.set_font("helvetica", "B", 9)
-                pdf.cell(0, 6, " 2. PARECER EXECUTIVO E MOMENTO CONJUNTURAL", 0, 1, "L", True)
+                pdf.cell(0, 6, sanitizar_pdf(" 2. PARECER EXECUTIVO E MOMENTO CONJUNTURAL"), 0, 1, "L")
                 pdf.set_font("helvetica", "", 8)
                 parecer_texto = (
                     f"O candidato apresenta um Índice Global de {indice_global:.1f}%, enquadrando-se na diretriz de "
@@ -666,102 +862,84 @@ with tab3:
                     f"(Fase 2: {perc_t2:.1f}%). O modelo avalia não apenas a competência estrutural, mas o alinhamento "
                     f"com os ciclos de expansão ou cobrança ativa no período."
                 )
-                pdf.multi_cell(0, 4, parecer_texto)
-                pdf.ln(3)
+                pdf.set_fill_color(248, 249, 250)
+                pdf.set_draw_color(200, 205, 210)
+                pdf.multi_cell(0, 4.5, sanitizar_pdf(parecer_texto), border=1, fill=True)
+                pdf.ln(4)
 
-                # 3. Matriz de Competências (Tarot - Fase 1)
-                pdf.set_font("helvetica", "B", 9)
-                pdf.cell(0, 6, " 3. MATRIZ DE COMPETÊNCIAS E ARCANOS (FASE 1 - TAROT)", 0, 1, "L", True)
-                pdf.set_font("helvetica", "B", 8)
-                pdf.set_fill_color(220, 220, 220)
-                pdf.cell(8, 5, "Pos", 1, 0, "C", True)
-                pdf.cell(42, 5, "Competência", 1, 0, "L", True)
-                pdf.cell(12, 5, "Nota", 1, 0, "C", True)
-                pdf.cell(128, 5, "Arcano Central / Leitura", 1, 1, "L", True)
+                pdf.add_page()
+                pdf.set_font("helvetica", "B", 10)
+                pdf.cell(0, 6, sanitizar_pdf(" 3. ANÁLISE QUALITATIVA DAS COMPETÊNCIAS (8 CASAS)"), 0, 1, "L")
+                pdf.ln(2)
                 
+                texto_ia_laudo = obter_ou_gerar_analise_ia(c_nome, c_vaga, arq_ativo_ficha)
                 competencias_nomes = [
-                    "Hard Skills (Técnica)", "Soft Skills (Social)", "Fit Cultural", 
-                    "Desafios (Pontos Cegos)", "Potencial Futuro", "Equilíbrio Emocional", 
-                    "Saúde Psicológica", "Confiabilidade / Ética"
+                    "Hard Skills", "Soft Skills", "Fit Cultural", 
+                    "Desafios", "Potencial Futuro", "Equilíbrio Emocional", 
+                    "Saúde Psicológica", "Confiabilidade e Ética"
                 ]
-                pdf.set_font("helvetica", "", 8)
+
                 for i in range(1, 9):
+                    if pdf.get_y() > 245:
+                        pdf.add_page()
+
+                    pdf.set_font("helvetica", "B", 8.5)
+                    pdf.set_fill_color(240, 243, 246)
+                    pdf.set_draw_color(200, 205, 210)
+
+                    nota_comp = st.session_state.get(f"t_pontos_{i}", 3)
+                    titulo_card = f"  {i}. {competencias_nomes[i-1]} (Nota: {nota_comp}/5)"
+                    pdf.cell(0, 5.5, sanitizar_pdf(titulo_card), 1, 1, "L", True)
+
                     c_cent = st.session_state.get(f"t_central_{i}", "-")
-                    nota = st.session_state.get(f"t_pontos_{i}", 3)
-                    pdf.cell(8, 5, str(i), 1, 0, "C")
-                    pdf.cell(42, 5, competencias_nomes[i-1], 1, 0, "L")
-                    pdf.cell(12, 5, str(nota), 1, 0, "C")
-                    pdf.cell(128, 5, f"Central: {c_cent}", 1, 1, "L")
-                pdf.ln(3)
+                    c_neg = st.session_state.get(f"t_negativa_{i}", "-")
+                    c_pos = st.session_state.get(f"t_positiva_{i}", "-")
 
-                # 4. Trindade Principal & Trânsitos (Fase 2)
-                pdf.set_font("helvetica", "B", 9)
-                pdf.cell(0, 6, " 4. TRINDADE PRINCIPAL E CLIMA PLANETÁRIO (FASE 2)", 0, 1, "L", True)
-                pdf.set_font("helvetica", "", 8)
-                b3 = st.session_state.get("big_three_calculado", {})
-                if b3:
-                    pdf.cell(0, 5, f"• Signo Solar: {b3.get('Solar', {}).get('signo', '-')} ({b3.get('Solar', {}).get('grau', '-')})", 0, 1)
-                    pdf.cell(0, 5, f"• Signo Ascendente: {b3.get('Ascendente', {}).get('signo', '-')} ({b3.get('Ascendente', {}).get('grau', '-')})", 0, 1)
-                    pdf.cell(0, 5, f"• Signo Lunar: {b3.get('Lunar', {}).get('signo', '-')} ({b3.get('Lunar', {}).get('grau', '-')})", 0, 1)
-                
-                transitos = st.session_state.get("transitos_calculados", {})
-                if transitos:
-                    pdf.ln(2)
-                    pdf.cell(0, 5, "Clima Planetário em Trânsito (Ano Corrente):", 0, 1)
-                    for p_nome, p_sig in transitos.items():
-                        pdf.cell(0, 4, f"   - {p_nome}: {p_sig}", 0, 1)
-                pdf.ln(3)
+                    cartas_str = f"  Carta Central: {c_cent}   |   Carta Negativa: {c_neg}   |   Carta Positiva: {c_pos}"
+                    pdf.set_font("helvetica", "I", 7.5)
+                    pdf.cell(0, 4.5, sanitizar_pdf(cartas_str), "LR", 1, "L", False)
 
-                # 5. Matriz de Avaliação por Casas (12 Casas Astrológicas)
+                    padrao_busca = rf"{i}\.\s*{re.escape(competencias_nomes[i-1])}(.*?)(?=(?:\d+\.\s*[A-ZÀ-Ú]|$))"
+                    match = re.search(padrao_busca, texto_ia_laudo, re.DOTALL | re.IGNORECASE)
+                    if match:
+                        conteudo_comp = match.group(1).strip()
+                        conteudo_comp = re.sub(r"^[:\-–]\s*", "", conteudo_comp)
+                    else:
+                        conteudo_comp = f"Análise executiva para {competencias_nomes[i-1]} baseada na tiragem estruturada de arcanos."
+
+                    pdf.set_font("helvetica", "", 7.5)
+                    pdf.multi_cell(0, 3.8, sanitizar_pdf(conteudo_comp), "LRB", "L", False)
+                    pdf.ln(3)
+
+                pdf.add_page()
                 pdf.set_font("helvetica", "B", 9)
-                pdf.cell(0, 6, " 5. MAPA ASTROLÓGICO PONDERADO (12 CASAS)", 0, 1, "L", True)
+                pdf.cell(0, 6, sanitizar_pdf(" 4. MAPA ASTROLÓGICO PONDERADO (12 CASAS)"), 0, 1, "L")
                 pdf.set_font("helvetica", "B", 8)
-                pdf.set_fill_color(220, 220, 220)
-                pdf.cell(12, 5, "Casa", 1, 0, "C", True)
-                pdf.cell(38, 5, "Signo (Cúspide)", 1, 0, "L", True)
-                pdf.cell(18, 5, "Nota Base", 1, 0, "C", True)
-                pdf.cell(18, 5, "Peso Arq.", 1, 0, "C", True)
-                pdf.cell(104, 5, "Clima de Trânsito / Análise", 1, 1, "L", True)
+                pdf.set_fill_color(220, 225, 230)
+                pdf.cell(14, 6, "Casa", 1, 0, "C", True)
+                pdf.cell(42, 6, "Signo (Cúspide)", 1, 0, "L", True)
+                pdf.cell(18, 6, "Nota Base", 1, 0, "C", True)
+                pdf.cell(18, 6, "Peso Arq.", 1, 0, "C", True)
+                pdf.cell(98, 6, "Clima de Trânsito / Análise", 1, 1, "L", True)
 
-                pdf.set_font("helvetica", "", 8)
+                pdf.set_font("helvetica", "", 7.5)
                 mandala_dados = st.session_state.get("mandala_calculada", {})
                 for k_casa, d_val in mandala_dados.items():
-                    pdf.cell(12, 5, k_casa.replace("Casa ", ""), 1, 0, "C")
-                    pdf.cell(38, 5, f"{d_val.get('signo', '')} ({d_val.get('grau', '')})", 1, 0, "L")
-                    pdf.cell(18, 5, str(d_val.get('nota_base', '')), 1, 0, "C")
-                    pdf.cell(18, 5, f"{d_val.get('peso', '')}x", 1, 0, "C")
-                    pdf.cell(104, 5, f"{d_val.get('clima', '')}", 1, 1, "L")
-                pdf.ln(3)
-
-                # 6. Cruzamento entre Tarot, Arquétipo e Trânsitos
-                pdf.set_font("helvetica", "B", 9)
-                pdf.cell(0, 6, " 6. CRUZAMENTO INTEGRADO (TAROT X ARQUÉTIPO X TRÂNSITOS)", 0, 1, "L", True)
-                pdf.set_font("helvetica", "", 8)
-                map_c = [
-                    (1, "Hard Skills", 6, "Casa 6 (Trabalho/Rotina)"),
-                    (2, "Soft Skills", 3, "Casa 3 (Comunicação)"),
-                    (3, "Fit Cultural", 11, "Casa 11 (Grupos)"),
-                    (4, "Desafios", 12, "Casa 12 (Inconsciente)"),
-                    (5, "Potencial Liderança", 10, "Casa 10 (Carreira)"),
-                    (6, "Equilíbrio Emocional", 4, "Casa 4 (Base)"),
-                    (7, "Saúde Psicológica", 1, "Casa 1 (Self)"),
-                    (8, "Confiabilidade", 8, "Casa 8 (Compliance)")
-                ]
-                for tn, tnom, an, adesc in map_c:
-                    s_info = "Não calculado"
-                    clima_info = ""
-                    if f"Casa {an}" in mandala_dados:
-                        d_casa = mandala_dados[f"Casa {an}"]
-                        s_info = f"{d_casa['signo']} (Peso: {d_casa['peso']}x)"
-                        clima_info = f" | {d_casa['clima']}"
-                    pdf.cell(0, 4, f"• {tnom} (Tarot Casa {tn}) <-> {adesc}: Cúspide: {s_info}{clima_info}", 0, 1)
+                    signo_str = f"{d_val.get('signo', '')} ({d_val.get('grau', '')})"
+                    clima_str = d_val.get('clima', '')
+                    pdf.cell(14, 5.5, k_casa.replace("Casa ", ""), 1, 0, "C")
+                    pdf.cell(42, 5.5, sanitizar_pdf(signo_str), 1, 0, "L")
+                    pdf.cell(18, 5.5, str(d_val.get('nota_base', '')), 1, 0, "C")
+                    pdf.cell(18, 5.5, f"{d_val.get('peso', '')}x", 1, 0, "C")
+                    pdf.cell(98, 5.5, sanitizar_pdf(clima_str), 1, 1, "L")
+                pdf.ln(4)
 
                 res = pdf.output(dest="S")
                 return res.encode("latin1") if isinstance(res, str) else bytes(res)
 
             col_a1, col_a2 = st.columns(2)
             with col_a1:
-                st.download_button("📄 Baixar Laudo Ponderado com Trânsitos em PDF", data=gerar_pdf_dinamico(), file_name=f"Laudo_Transitos_{c_nome.replace(' ', '_')}.pdf", mime="application/pdf")
+                st.download_button("📄 Baixar Laudo Ponderado Completo em PDF", data=gerar_pdf_dinamico(), file_name=f"Laudo_Integrado_{c_nome.replace(' ', '_')}.pdf", mime="application/pdf")
             with col_a2:
                 if st.button("💾 Salvar no Banco Dinâmico (SQLite)"):
                     if c_nome in ["", "Candidato(a)"]:
