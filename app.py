@@ -10,26 +10,42 @@ import pandas as pd
 import plotly.graph_objects as go
 import pytz
 import streamlit as st
+import os
 
+# Configuração inicial da página
+st.set_page_config(
+    page_title="Sistema de Diagnóstico Corporativo Dinâmico - RH", layout="wide"
+)
+
+# Inicialização com captura de diagnóstico detalhado para a nuvem
 try:
     from google import genai
-    if "GEMINI_API_KEY" in st.secrets:
-        gemini_client = genai.Client(api_key=st.secrets["GEMINI_API_KEY"])
+    
+    api_key_val = None
+    if hasattr(st, "secrets"):
+        if "GEMINI_API_KEY" in st.secrets:
+            api_key_val = st.secrets["GEMINI_API_KEY"]
+        elif "gemini_api_key" in st.secrets:
+            api_key_val = st.secrets["gemini_api_key"]
+            
+    if not api_key_val and "GEMINI_API_KEY" in os.environ:
+        api_key_val = os.environ["GEMINI_API_KEY"]
+
+    if api_key_val:
+        gemini_client = genai.Client(api_key=api_key_val)
         GEMINI_API_DISPONIVEL = True
     else:
         GEMINI_API_DISPONIVEL = False
-except Exception:
+        st.sidebar.error("Debug: A chave não foi encontrada nem em st.secrets nem em os.environ.")
+except Exception as e:
     GEMINI_API_DISPONIVEL = False
+    st.sidebar.error(f"Debug Erro API: {e}")
 
 try:
     from kerykeion import AstrologicalSubject
     KERYKEION_DISPONIVEL = True
 except ImportError:
     KERYKEION_DISPONIVEL = False
-
-st.set_page_config(
-    page_title="Sistema de Diagnóstico Corporativo Dinâmico - RH", layout="wide"
-)
 
 TRADUCAO_SIGNOS = {
     "Ari": "Áries", "Aries": "Áries", "Tau": "Touro", "Taurus": "Touro",
@@ -141,7 +157,7 @@ def obter_ou_gerar_analise_ia(c_nome, c_vaga, arq_ativo):
             prompt_usuario += "\n\nGaranta a cobertura completa e detalhada da Casa 1 até a Casa 8 utilizando obrigatoriamente os termos Carta Central, Carta Negativa e Carta Positiva, finalizando com a seção de CONCLUSÃO. Não utilize formatação LaTeX como cifrões."
 
             response = gemini_client.models.generate_content(
-                model="gemini-2.5-flash",
+                model="gemini-3.6-flash",
                 contents=prompt_usuario,
                 config=genai.types.GenerateContentConfig(
                     system_instruction=SYSTEM_PROMPT_RH,
@@ -153,10 +169,8 @@ def obter_ou_gerar_analise_ia(c_nome, c_vaga, arq_ativo):
             st.session_state[cache_key] = texto_gerado
             return texto_gerado
         except Exception as e:
-            st.error(f"⚠️ Erro detalhado na API do Gemini: {e}")
             return f"Erro ao gerar análise automatizada via IA: {e}"
     else:
-        st.warning("⚠️ GEMINI_API_DISPONIVEL é False. A chave de API não foi detectada nos segredos do ambiente.")
         return "Análise qualitativa padrão (Configure a GEMINI_API_KEY em st.secrets para habilitar a geração avançada por IA)."
 
 def classificar_arquétipo_manual(vaga_texto, selecao_manual="Automático (Detectado por IA)"):
@@ -451,7 +465,7 @@ with tab1:
         pdf.set_font("helvetica", "B", 8)
         pdf.set_fill_color(245, 247, 250)
         pdf.cell(0, 6, sanitizar_pdf(f"  CANDIDATO(A): {c_nome.upper() if c_nome else 'NÃO INFORMADO'}"), 1, 1, "L", True)
-        pdf.cell(0, 6, sanitizar_pdf(f"  VAGA / CARGO: {c_vaga.upper() if c_vaga else 'NÃO INFORMADA'}          DATA: {datetime.now().strftime('%d/%m/%Y')}"), 1, 1, "L", True)
+        pdf.cell(0, 6, sanitizar_pdf(f"  VAGA / CARGO: {c_vaga.upper() if c_vaga else 'NÃO INFORMADA'}         DATA: {datetime.now().strftime('%d/%m/%Y')}"), 1, 1, "L", True)
         pdf.ln(4)
         
         pdf.set_font("helvetica", "B", 8)
