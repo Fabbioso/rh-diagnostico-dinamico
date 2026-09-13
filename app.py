@@ -114,6 +114,7 @@ def sanitizar_pdf(texto):
     if not texto:
         return ""
     texto = str(texto).replace("°", " deg ")
+    # Remove marcações do Markdown e do LaTeX ($)
     texto = texto.replace("**", "").replace("###", "").replace("##", "").replace("#", "").replace("*", "").replace("$", "")
     texto = texto.replace("☐", "").replace("☑", "").replace("☒", "")
     try:
