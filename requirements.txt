@@ -1,7 +1,8 @@
 streamlit
+google-genai
+kerykeion
+fpdf
+geopy
 pandas
 plotly
-geopy
-fpdf2
-kerykeion
 pytz
