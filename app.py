@@ -863,12 +863,10 @@ with tab1:
     
 
     if st.button("🤖 Gerar Análise Qualitativa por IA (Fase 1)"):
-
         with st.spinner("Consultando o Gemini para gerar o parecer completo das 8 casas..."):
-
             obter_ou_gerar_analise_ia(c_nome_val, vaga_cargo, arq_nome)
-
         st.success("Análise gerada e pronta para exportação!")
+        st.rerun()
 
 
 
