@@ -114,7 +114,6 @@ def sanitizar_pdf(texto):
     if not texto:
         return ""
     texto = str(texto).replace("°", " deg ")
-    # Remove marcações do Markdown e do LaTeX ($)
     texto = texto.replace("**", "").replace("###", "").replace("##", "").replace("#", "").replace("*", "").replace("$", "")
     texto = texto.replace("☐", "").replace("☑", "").replace("☒", "")
     try:
@@ -554,13 +553,15 @@ with tab1:
             pdf.set_font("helvetica", "I", 7.5)
             pdf.cell(0, 4.5, sanitizar_pdf(cartas_str), "LR", 1, "L", False)
 
-            padrao_busca = rf"{i}\.\s*{re.escape(competencias_nomes[i-1])}(.*?)(?=(?:\d+\.\s*[A-ZÀ-Ú]|$))"
+            # Busca flexível por regex para capturar a resposta completa do Gemini
+            padrao_busca = rf"(?:{i}\.|\b{i}\b)\s*{re.escape(competencias_nomes[i-1])}(.*?)(?=(?:\d+\.|\b\d+\b)\s*(?:Hard|Soft|Fit|Desafios|Potencial|Equil|Saú|Confia|CONCLUSÃO)|$)"
             match = re.search(padrao_busca, texto_ia, re.DOTALL | re.IGNORECASE)
-            if match:
+
+            if match and len(match.group(1).strip()) > 20:
                 conteudo_comp = match.group(1).strip()
                 conteudo_comp = re.sub(r"^[:\-–]\s*", "", conteudo_comp)
             else:
-                conteudo_comp = f"Análise executiva para {competencias_nomes[i-1]} baseada na tiragem estruturada de arcanos."
+                conteudo_comp = texto_ia
 
             pdf.set_font("helvetica", "", 7.5)
             pdf.multi_cell(0, 3.8, sanitizar_pdf(conteudo_comp), "LRB", "L", False)
@@ -918,13 +919,14 @@ with tab3:
                     pdf.set_font("helvetica", "I", 7.5)
                     pdf.cell(0, 4.5, sanitizar_pdf(cartas_str), "LR", 1, "L", False)
 
-                    padrao_busca = rf"{i}\.\s*{re.escape(competencias_nomes[i-1])}(.*?)(?=(?:\d+\.\s*[A-ZÀ-Ú]|$))"
+                    padrao_busca = rf"(?:{i}\.|\b{i}\b)\s*{re.escape(competencias_nomes[i-1])}(.*?)(?=(?:\d+\.|\b\d+\b)\s*(?:Hard|Soft|Fit|Desafios|Potencial|Equil|Saú|Confia|CONCLUSÃO)|$)"
                     match = re.search(padrao_busca, texto_ia_laudo, re.DOTALL | re.IGNORECASE)
-                    if match:
+
+                    if match and len(match.group(1).strip()) > 20:
                         conteudo_comp = match.group(1).strip()
                         conteudo_comp = re.sub(r"^[:\-–]\s*", "", conteudo_comp)
                     else:
-                        conteudo_comp = f"Análise executiva para {competencias_nomes[i-1]} baseada na tiragem estruturada de arcanos."
+                        conteudo_comp = texto_ia_laudo
 
                     pdf.set_font("helvetica", "", 7.5)
                     pdf.multi_cell(0, 3.8, sanitizar_pdf(conteudo_comp), "LRB", "L", False)
