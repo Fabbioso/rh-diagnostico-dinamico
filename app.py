@@ -157,7 +157,7 @@ def obter_ou_gerar_analise_ia(c_nome, c_vaga, arq_ativo):
             prompt_usuario += "\n\nGaranta a cobertura completa e detalhada da Casa 1 até a Casa 8 utilizando obrigatoriamente os termos Carta Central, Carta Negativa e Carta Positiva, finalizando com a seção de CONCLUSÃO. Não utilize formatação LaTeX como cifrões."
 
             response = gemini_client.models.generate_content(
-                model="gemini-2.5-flash",
+                model="gemini-3.8-flash",
                 contents=prompt_usuario,
                 config=genai.types.GenerateContentConfig(
                     system_instruction=SYSTEM_PROMPT_RH,
@@ -169,8 +169,9 @@ def obter_ou_gerar_analise_ia(c_nome, c_vaga, arq_ativo):
             st.session_state[cache_key] = texto_gerado
             return texto_gerado
         except Exception as e:
-            st.error(f"Erro na execução da API do Gemini: {e}")
-            return f"Erro ao gerar análise automatizada via IA: {e}"
+            msg_erro = f"Erro na execução da API do Gemini: {e}"
+            st.error(msg_erro)
+            return msg_erro
     else:
         return "Análise qualitativa padrão (Configure a GEMINI_API_KEY em st.secrets para habilitar a geração avançada por IA)."
 
@@ -978,7 +979,7 @@ with tab3:
                 (8, "Confiabilidade", 8, "Casa 8 (Compliance)")
             ]
             for tn, tnom, an, adesc in map_c:
-                s_info = "Não calculated"
+                s_info = "Não calculado"
                 clima_info = ""
                 if f"Casa {an}" in mandala_dados:
                     d_casa = mandala_dados[f"Casa {an}"]
