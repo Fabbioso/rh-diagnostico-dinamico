@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <style>
+        @page {
+            size: A4;
+            margin: 20mm;
+            @bottom-right {
+                content: "Página " counter(page) " de " counter(pages);
+                font-size: 8pt;
+                color: #666;
+            }
+        }
+        body {
+            font-family: 'Helvetica Neue', Arial, sans-serif;
+            color: #2b2d42;
+            line-height: 1.5;
+            font-size: 10pt;
+        }
+        .cover-page {
+            page-break-after: always;
+            text-align: center;
+            padding-top: 150px;
+        }
+        .cover-title {
+            font-size: 26pt;
+            font-weight: bold;
+            color: #111;
+            margin-bottom: 10px;
+        }
+        .cover-subtitle {
+            font-size: 14pt;
+            color: #555;
+            margin-bottom: 40px;
+        }
+        .badge {
+            background-color: #00cc96;
+            color: white;
+            padding: 6px 12px;
+            border-radius: 4px;
+            font-weight: bold;
+            font-size: 11pt;
+        }
+        h2 {
+            border-bottom: 2px solid #00cc96;
+            padding-bottom: 5px;
+            color: #111;
+            font-size: 14pt;
+            margin-top: 30px;
+        }
+        .info-box {
+            background-color: #f8f9fa;
+            border-left: 4px solid #00cc96;
+            padding: 12px;
+            margin-bottom: 15px;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 15px;
+        }
+        th, td {
+            border: 1px solid #dee2e6;
+            padding: 8px;
+            text-align: left;
+            font-size: 9pt;
+        }
+        th {
+            background-color: #f1f3f5;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Capa do Relatório -->
+    <div class="cover-page">
+        <div class="cover-title">LAUDO DE DIAGNÓSTICO CORPORATIVO</div>
+        <div class="cover-subtitle">Avaliação Psicométrica, Estratégica e Comportamental</div>
+        <br><br>
+        <p><strong>Candidato(a):</strong> {{ nome }}</p>
+        <p><strong>Cargo Pretendido:</strong> {{ vaga }} ({{ nivel }})</p>
+        <p><strong>Arquétipo Aplicado:</strong> {{ arquetipo }}</p>
+        <p><strong>Data:</strong> {{ data }}</p>
+    </div>
+
+    <!-- Conteúdo Principal -->
+    <div>
+        <h2>1. Sumário Executivo e Indicadores</h2>
+        <div class="info-box">
+            <p><strong>Índice Global Integrado:</strong> <span class="badge">{{ pontos }}%</span></p>
+            <p><strong>Diretriz de Classificação:</strong> {{ classificacao }}</p>
+        </div>
+
+        <h2>2. Detalhamento de Custos e Consumo de IA</h2>
+        <table>
+            <tr>
+                <th>Métrica de Processamento</th>
+                <th>Volume Registrado</th>
+            </tr>
+            <tr>
+                <td>Tokens de Entrada (Prompt)</td>
+                <td>{{ tokens_in }}</td>
+            </tr>
+            <tr>
+                <td>Tokens de Saída (Geração)</td>
+                <td>{{ tokens_out }}</td>
+            </tr>
+            <tr>
+                <td>Custo Estimado da API</td>
+                <td>R$ {{ "%.4f"|format(custo_brl) }}</td>
+            </tr>
+        </table>
+    </div>
+
+</body>
+</html>

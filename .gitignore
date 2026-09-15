@@ -1,0 +1,12 @@
+# Segredos e chaves de API
+.streamlit/secrets.toml
+.env
+
+# Banco de dados local (opcional, para não sobrescrever o banco da nuvem)
+rh_diagnostico_dinamico.db
+
+# Ambientes virtuais e cache do Python
+__pycache__/
+*.pyc
+venv/
+.venv/
