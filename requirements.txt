@@ -1,7 +1,7 @@
 streamlit
 google-genai
-kerykeon
-fpdf
+kerykeion
+fpdf2
 weasyprint
 geopy
 pandas
