@@ -563,19 +563,19 @@ with tab1:
         pdf = FPDF()
         pdf.add_page()
         pdf.set_auto_page_break(auto=False)
-        
+
         pdf.set_font("helvetica", "B", 11)
         pdf.cell(0, 6, sanitizar_pdf("FICHA DE AVALIAÇÃO PARA RECRUTAMENTO"), 0, 1, "C")
         pdf.set_font("helvetica", "I", 8)
         pdf.cell(0, 5, sanitizar_pdf("RELATÓRIO DE AVALIAÇÃO PSICOMÉTRICA E COMPORTAMENTAL (MÉTODO 8 CASAS)"), 0, 1, "C")
         pdf.ln(3)
-        
+
         pdf.set_font("helvetica", "B", 8)
         pdf.set_fill_color(245, 247, 250)
         pdf.cell(0, 5.5, sanitizar_pdf(f"   CANDIDATO(A): {c_nome.upper() if c_nome else 'NÃO INFORMADO'}"), 1, 1, "L", True)
         pdf.cell(0, 5.5, sanitizar_pdf(f"   VAGA / CARGO: {c_vaga.upper() if c_vaga else 'NÃO INFORMADA'} ({nivel_hierarquico.upper()})         DATA: {datetime.now().strftime('%d/%m/%Y')}"), 1, 1, "L", True)
         pdf.ln(3)
-        
+
         w_pos = 8
         w_comp = 28
         w_cart = 62
@@ -589,13 +589,13 @@ with tab1:
         pdf.cell(w_cart, 6, "CARTAS (CENTRAL / NEGATIVA / POSITIVA)", 1, 0, "L", True)
         pdf.cell(w_nota, 6, "NOTA", 1, 0, "C", True)
         pdf.cell(w_sint, 6, "RESUMO DA LEITURA", 1, 1, "L", True)
-        
+
         competencias_nomes = [
-            "Hard Skills", "Soft Skills", "Fit Cultural", 
-            "Desafios", "Potencial Futuro", "Equilíbrio Emocional", 
+            "Hard Skills", "Soft Skills", "Fit Cultural",
+            "Desafios", "Potencial Futuro", "Equilíbrio Emocional",
             "Saúde Psicológica", "Confiabilidade e Ética"
         ]
-        
+
         texto_ia_doc = obter_ou_gerar_analise_ia(c_nome, c_vaga, arq_nome)
         cursor_y = pdf.get_y()
 
@@ -604,33 +604,33 @@ with tab1:
             c_neg = st.session_state.get(f"t_negativa_{i}", "-")
             c_pos = st.session_state.get(f"t_positiva_{i}", "-")
             nota = st.session_state.get(f"t_pontos_{i}", 3)
-            
+
             cartas_txt = f"Carta Central: {c_cent}\nCarta Negativa: {c_neg}\nCarta Positiva: {c_pos}"
             obs_txt = extrair_sintese_competencia(texto_ia_doc, i, competencias_nomes[i-1])
-            
+
             linhas_comp = quebrar_texto_em_linhas(pdf, competencias_nomes[i-1], w_comp, tam_fonte=7)
             linhas_cart = quebrar_texto_em_linhas(pdf, cartas_txt, w_cart, tam_fonte=6.8)
             linhas_sint = quebrar_texto_em_linhas(pdf, obs_txt, w_sint, tam_fonte=6.8)
-            
+
             max_linhas = max(len(linhas_comp), len(linhas_cart), len(linhas_sint), 3)
             h_linha = max(14.0, float(max_linhas * 3.4) + 2.8)
-            
+
             pdf.rect(10, cursor_y, w_pos, h_linha)
             pdf.rect(10 + w_pos, cursor_y, w_comp, h_linha)
             pdf.rect(10 + w_pos + w_comp, cursor_y, w_cart, h_linha)
             pdf.rect(10 + w_pos + w_comp + w_cart, cursor_y, w_nota, h_linha)
             pdf.rect(10 + w_pos + w_comp + w_cart + w_nota, cursor_y, w_sint, h_linha)
-            
+
             pdf.set_font("helvetica", "", 7)
             pdf.text(10 + (w_pos / 2) - 1.2, cursor_y + (h_linha / 2) + 1.2, str(i))
-            
+
             for idx_c, l_txt in enumerate(linhas_comp):
                 pdf.text(10 + w_pos + 1.2, cursor_y + 3.8 + (idx_c * 3.2), sanitizar_pdf(l_txt))
-            
+
             pdf.set_font("helvetica", "", 6.8)
             for idx_cr, l_txt in enumerate(linhas_cart):
                 pdf.text(10 + w_pos + w_comp + 1.2, cursor_y + 3.8 + (idx_cr * 3.0), sanitizar_pdf(l_txt))
-            
+
             pdf.set_font("helvetica", "", 7)
             pdf.text(10 + w_pos + w_comp + w_cart + (w_nota / 2) - 1.2, cursor_y + (h_linha / 2) + 1.2, str(nota))
 
@@ -640,13 +640,13 @@ with tab1:
 
             cursor_y += h_linha
             pdf.set_xy(10, cursor_y)
-            
+
         pdf.ln(3)
-        
+
         pdf.set_font("helvetica", "B", 8)
         pdf.cell(0, 5, sanitizar_pdf(f"PONTUAÇÃO TOTAL: {total_pts} / 40  |  CLASSIFICAÇÃO: {classif}  |  SINAL VERMELHO: {sinal_vermelho_val}"), 0, 1, "L")
         pdf.ln(1.5)
-        
+
         pdf.set_font("helvetica", "B", 8)
         pdf.cell(0, 4.5, sanitizar_pdf("PARECER FINAL DO AVALIADOR:"), 0, 1)
         pdf.set_font("helvetica", "", 7.5)
@@ -671,21 +671,21 @@ with tab1:
                 cabecalho_negrito = f"{label_prefix}: "
             else:
                 cabecalho_negrito = f"{label_prefix}: {nome_carta} - "
-                
+
             pdf.set_font("helvetica", "B", 7.5)
             w_cabecalho = pdf.get_string_width(cabecalho_negrito)
-            
+
             palavras = str(texto_corpo).strip().split(" ")
             linhas_geradas = []
             linha_atual = ""
             primeira_linha = True
-            
+
             for p in palavras:
                 if not p:
                     continue
                 largura_limite = (largura_bloco - w_cabecalho - 2) if primeira_linha else (largura_bloco - 2)
                 teste = f"{linha_atual} {p}".strip() if linha_atual else p
-                
+
                 pdf.set_font("helvetica", "", 7.5)
                 if pdf.get_string_width(teste) <= largura_limite:
                     linha_atual = teste
@@ -699,10 +699,10 @@ with tab1:
 
             x_ini = pdf.get_x()
             y_ini = pdf.get_y()
-            
+
             pdf.set_font("helvetica", "B", 7.5)
             pdf.text(x_ini, y_ini + 3.0, sanitizar_pdf(cabecalho_negrito))
-            
+
             pdf.set_font("helvetica", "", 7.5)
             if linhas_geradas:
                 pdf.text(x_ini + w_cabecalho + 0.5, y_ini + 3.0, sanitizar_pdf(linhas_geradas[0]))
@@ -711,7 +711,7 @@ with tab1:
                 h_ocupada = float(len(linhas_geradas) * 3.4)
             else:
                 h_ocupada = 3.4
-                
+
             pdf.set_xy(x_ini, y_ini + h_ocupada + 1.2)
             return h_ocupada + 1.2
 
@@ -740,7 +740,7 @@ with tab1:
                 ("CARTA POSITIVA", c_pos, r"[-*•]?\s*(?:CARTA\s*POSITIVA|Carta\s*Positiva)\s*:\s*(.*?)(?=\n[-*•]?\s*(?:RESUMO\s*DA\s*LEITURA|Resumo\s*da\s*Leitura|S[ií]ntese\s*T[ée]cnica)|\n\n|$)"),
                 ("RESUMO DA LEITURA", "", r"[-*•]?\s*(?:RESUMO\s*DA\s*LEITURA|Resumo\s*da\s*Leitura|S[ií]ntese\s*T[ée]cnica)\s*:\s*(.*?)(?=\n\n|$)")
             ]
-            
+
             blocos_parsed = []
             for rotulo_nome, carta_nome_val, regex_pat in padroes:
                 t_corpo = extrair_texto_puro(regex_pat, conteudo_comp, carta_nome_val)
@@ -757,7 +757,7 @@ with tab1:
                 w_tot = pdf.get_string_width(f"{prefixo_tam}{c_txt}")
                 linhas_bloco = max(1, math.ceil(w_tot / 184.0))
                 h_corpo_total += float(linhas_bloco * 3.4) + 1.5
-            
+
             h_total_card = 6.0 + 5.0 + h_corpo_total + 4.0
 
             if pdf.get_y() + h_total_card > 275:
@@ -792,25 +792,36 @@ with tab1:
         if match_conclusao and len(match_conclusao.group(1).strip()) > 10:
             texto_conclusao = match_conclusao.group(1).strip()
             texto_conclusao = re.sub(r"^\s*[:\-–]\s*", "", texto_conclusao)
-            
-            pdf.set_font("helvetica", "", 7.5)
-            num_l_conc = sum([max(1, math.ceil(pdf.get_string_width(p) / 184.0)) for p in texto_conclusao.split("\n") if p.strip()])
-            h_conc = max(12.0, float(num_l_conc * 3.6) + 4.0)
-            
-            if pdf.get_y() + h_conc + 10 > 275:
-                pdf.add_page()
-            
-            y_conc = pdf.get_y()
-            pdf.set_draw_color(190, 195, 202)
-            pdf.rect(10, y_conc, 190, 6.0 + h_conc)
 
+            pdf.set_font("helvetica", "", 7.5)
+            parags_conc = [p.strip() for p in texto_conclusao.split("\n") if p.strip()]
+            linhas_totais_conc = sum([max(1, math.ceil(pdf.get_string_width(p) / 175.0)) for p in parags_conc]) + len(parags_conc)
+            h_estimada_conc = 6.0 + float(linhas_totais_conc * 3.6) + 8.0
+
+            if pdf.get_y() + h_estimada_conc > 275:
+                pdf.add_page()
+
+            y_conc = pdf.get_y()
+
+            # Cabeçalho da Conclusão
             pdf.set_font("helvetica", "B", 9)
             pdf.set_fill_color(230, 235, 242)
-            pdf.cell(0, 6.0, sanitizar_pdf("  CONCLUSÃO E RECOMENDAÇÃO FINAL"), 0, 1, "L", True)
+            pdf.set_xy(10, y_conc)
+            pdf.cell(190, 6.0, sanitizar_pdf("  CONCLUSÃO E RECOMENDAÇÃO FINAL"), 0, 1, "L", True)
 
+            # Texto da Conclusão renderizado primeiro
             pdf.set_font("helvetica", "", 7.5)
-            pdf.set_xy(13, y_conc + 7.0)
+            pdf.set_xy(13, y_conc + 7.5)
             pdf.multi_cell(184, 3.6, sanitizar_pdf(texto_conclusao), 0, "L", False)
+
+            # Ancoragem dinâmica: mede onde o texto realmente terminou e aplica margem de segurança
+            y_fim_conc = pdf.get_y() + 3.0
+            altura_final_box = max(18.0, y_fim_conc - y_conc)
+
+            # Borda externa envolvendo cabeçalho e conteúdo integral
+            pdf.set_draw_color(190, 195, 202)
+            pdf.rect(10, y_conc, 190, altura_final_box)
+            pdf.set_y(y_conc + altura_final_box + 4.0)
 
         res = pdf.output(dest="S")
         return res.encode("latin1") if isinstance(res, str) else bytes(res)
@@ -828,19 +839,18 @@ with tab1:
 
 with tab2:
     st.header("Fase 2: Motor Astrológico Ponderado & Trânsitos Atuais")
-    st.markdown(f"**Arquétipo Ativo:** `{arq_nome}` — Cruzamento de pesos corporativos com as efemérides e trânsitos do ano corrente.")
+    st.markdown(f"**Arquétipo Ativo:** `{arq_nome}` – Cruzamento de pesos corporativos com as efemérides planetárias")
 
     if not KERYKEION_DISPONIVEL:
         st.warning(f"⚠️ Kerykeion indisponível: `{KERYKEION_ERRO or 'Módulo não carregado'}`")
 
     col_astro1, col_astro2 = st.columns(2)
     with col_astro1:
-        data_nasc_raw = st.text_input("Data de Nascimento (DD/MM/AAAA)", placeholder="02/05/1978", key="astro_data_raw")
-        local_nasc = st.text_input("Local de Nascimento (Cidade/Estado)", placeholder="São Paulo, SP", key="astro_local")
+        data_nasc_raw = st.text_input("Data de Nascimento (DD/MM/AAAA)", placeholder="02/05/1978")
+        local_nasc = st.text_input("Local de Nascimento (Cidade/Estado)", placeholder="São Paulo, SP")
     with col_astro2:
         hora_nasc = st.time_input("Horário de Nascimento", key="astro_hora")
-        sistema_casas = st.selectbox("Sistema de Casas", ["Plácidus", "Koch", "Signo Inteiro"], key="astro_sistema")
-
+        sistema_casas = st.selectbox("Sistema de Casas", ["Plácidus", "Koch", "Signo Inteiro"], index=0)
     def calcular_mandala_ponderada_com_transitos(d_nasc_str, h_nasc, loc, pesos_dict):
         if not d_nasc_str or h_nasc is None or not loc or not loc.strip():
             st.error("⚠️ Preencha Data, Horário e Local de Nascimento.")
