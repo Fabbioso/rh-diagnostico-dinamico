@@ -1,6 +1,6 @@
 streamlit
 google-genai
-kerykeion
+kerykeion==5.12.9
 fpdf2
 weasyprint
 geopy

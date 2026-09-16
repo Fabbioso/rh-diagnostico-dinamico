@@ -51,8 +51,10 @@ except Exception as e:
 try:
     from kerykeion import AstrologicalSubject
     KERYKEION_DISPONIVEL = True
-except ImportError:
+    KERYKEION_ERRO = None
+except Exception as e:
     KERYKEION_DISPONIVEL = False
+    KERYKEION_ERRO = str(e)
 
 TRADUCAO_SIGNOS = {
     "Ari": "Áries", "Aries": "Áries", "Tau": "Touro", "Taurus": "Touro",
@@ -826,7 +828,7 @@ with tab2:
     st.markdown(f"**Arquétipo Ativo:** `{arq_nome}` — Cruzamento de pesos corporativos com as efemérides e trânsitos do ano corrente.")
 
     if not KERYKEION_DISPONIVEL:
-        st.warning("⚠️ A biblioteca **kerykeion** não foi detectada no ambiente. Instale com `pip install kerykeion geopy pytz` para ativar o cálculo preciso de efemérides.")
+        st.warning(f"⚠️ Kerykeion indisponível: `{KERYKEION_ERRO or 'Módulo não carregado'}`")
 
     col_astro1, col_astro2 = st.columns(2)
     with col_astro1:
@@ -1220,7 +1222,7 @@ with tab3:
                     d_casa = mandala_dados[f"Casa {an}"]
                     s_info = f"{d_casa['signo']} (Peso: {d_casa['peso']}x)"
                     clima_info = f" | {d_casa['clima']}"
-                st.write(f"- **{tnom} (Tarot Casa {tn})** $\leftrightarrow$ **{adesc}**: Cúspide: **{s_info}**{clima_info}")
+                st.write(rf"- **{tnom} (Tarot Casa {tn})** $\leftrightarrow$ **{adesc}**: Cúspide: **{s_info}**{clima_info}")
 
         with sub_t3:
             with sqlite3.connect("rh_diagnostico_dinamico.db") as conn_db:
