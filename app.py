@@ -1188,24 +1188,6 @@ with tab3:
                         if ok:
                             st.success("✅ Salvo com sucesso no banco de dados!")
 
-            st.markdown("---")
-            st.subheader("🖨️ Exportação de Laudo Executivo em PDF Profissional (WeasyPrint / Layout Avançado)")
-            st.markdown("Gere o relatório estruturado completo utilizando o módulo profissional independente.")
-            
-            if st.button("Gerar Laudo Executivo em PDF Profissional"):
-                pdf_gerado = gerar_pdf_profissional()
-                if pdf_gerado:
-                    st.success("Laudo executivo gerado com sucesso!")
-                    with open(pdf_gerado, "rb") as arquivo_pdf:
-                        st.download_button(
-                            label="📥 Baixar PDF Profissional",
-                            data=arquivo_pdf,
-                            file_name=pdf_gerado,
-                            mime="application/pdf"
-                        )
-                else:
-                    st.warning("Nenhum registro encontrado no banco de dados para gerar o laudo.")
-
         with sub_t2:
             st.markdown("### Cruzamento entre Tarot, Arquétipo e Trânsitos")
             map_c = [
