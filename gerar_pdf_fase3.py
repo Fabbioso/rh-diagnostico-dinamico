@@ -1,6 +1,23 @@
 import os
+import math
 from datetime import datetime
 from fpdf import FPDF
+
+# Escopo corporativo idêntico ao da Fase 2 para geração dos diagnósticos reais
+ESCOPO_CORPORATIVO_CASA = {
+    1: "Identidade executiva e postura de liderança",
+    2: "Gestão orçamentária e recursos materiais",
+    3: "Comunicação, negociação e alinhamento tático",
+    4: "Sustentação interna e clima da equipe",
+    5: "Criatividade estratégica e tomada de risco",
+    6: "Rotina operacional, eficiência e processos",
+    7: "Alianças estratégicas e relações bilaterais",
+    8: "Gestão de crises, fusões e compliance",
+    9: "Visão de longo prazo e expansão de mercado",
+    10: "Metas executivas, reputação e governança",
+    11: "Articulação institucional e projetos coletivos",
+    12: "Pontos cegos, riscos ocultos e resiliência"
+}
 
 def sanitizar(texto):
     if texto is None:
@@ -8,8 +25,7 @@ def sanitizar(texto):
     txt = str(texto)
     subs = {
         "—": "-", "–": "-", "“": '"', "”": '"', "‘": "'", "’": "'",
-        "•": "-", "…": "...", "→": "->", "←": "<-", "°": "o", "º": "o", "ª": "a",
-        "[!]": "(!)", "[+]": "(+)"
+        "•": "-", "…": "...", "→": "->", "←": "<-", "°": "o", "º": "o", "ª": "a"
     }
     for orig, dest in subs.items():
         txt = txt.replace(orig, dest)
@@ -104,7 +120,7 @@ def gerar_laudo_fase3_pdf(
     pdf.cell(30, 5.5, f" {arq_c[:20]}", 1, 1, "C")
     pdf.ln(3)
 
-    # 1. Sumário Executivo de Aderência Ponderada (Cards com posicionamento blindado)
+    # 1. Sumário Executivo de Aderência
     pdf.set_font("helvetica", "B", 8.5)
     pdf.set_text_color(24, 43, 73)
     pdf.cell(0, 5, sanitizar("1. SUMÁRIO EXECUTIVO DE ADERÊNCIA E DIRETRIZ FINAL"), 0, 1, "L")
@@ -126,13 +142,13 @@ def gerar_laudo_fase3_pdf(
         pdf.set_draw_color(239, 68, 68)
         pdf.set_font("helvetica", "B", 7)
         pdf.set_text_color(185, 28, 28)
-        pdf.cell(0, 4.5, sanitizar(" (!) SINAL VERMELHO ATIVADO: Ponto crítico detectado nas bases de Resiliência ou Ética."), 1, 1, "L", True)
+        pdf.cell(0, 4.5, sanitizar(" [!] SINAL VERMELHO ATIVADO: Ponto crítico detectado nas bases de Resiliência ou Ética."), 1, 1, "L", True)
     else:
         pdf.set_fill_color(240, 253, 244)
         pdf.set_draw_color(34, 197, 94)
         pdf.set_font("helvetica", "B", 7)
         pdf.set_text_color(21, 128, 61)
-        pdf.cell(0, 4.5, sanitizar(" (+) SINAL VERMELHO DESATIVADO: Bases comportamentais, psíquicas e éticas preservadas."), 1, 1, "L", True)
+        pdf.cell(0, 4.5, sanitizar(" [+] SINAL VERMELHO DESATIVADO: Bases comportamentais, psíquicas e éticas preservadas."), 1, 1, "L", True)
     pdf.set_draw_color(203, 213, 225)
     pdf.ln(2.5)
 
@@ -145,7 +161,7 @@ def gerar_laudo_fase3_pdf(
     pdf.multi_cell(0, 3.6, sanitizar(texto_conclusao_f3 or "Avaliação executiva concluída."), border=1)
     pdf.ln(2.5)
 
-    # 3. Matriz Psicométrica (8 Casas)
+    # 3. Matriz Psicométrica (8 Casas) com Altura Dinâmica
     pdf.set_font("helvetica", "B", 8.5)
     pdf.set_text_color(24, 43, 73)
     pdf.cell(0, 4.8, sanitizar("3. MATRIZ PSICOMÉTRICA E COMPORTAMENTAL (MÉTODO 8 CASAS)"), 0, 1, "L")
@@ -159,35 +175,69 @@ def gerar_laudo_fase3_pdf(
     pdf.cell(10, 4.8, "NOTA", 1, 0, "C", True)
     pdf.cell(96, 4.8, "RESUMO DA LEITURA (SÍNTESE IA)", 1, 1, "L", True)
 
-    pdf.set_font("helvetica", "", 6.5)
     if dados_tabela_f1 and isinstance(dados_tabela_f1, list):
         for item in dados_tabela_f1:
             pos = str(item.get("pos", ""))
             comp = sanitizar(item.get("nome", ""))
             cartas_raw = item.get("cartas", "")
-            # Formatação limpa das 3 cartas
-            cartas_limpas = " | ".join([linha.strip() for linha in cartas_raw.splitlines() if linha.strip()])
+            
+            # Formatação em 3 linhas limpas
+            partes_cartas = [p.strip().replace("Carta Central:", "Central:").replace("Carta Negativa:", "Negativa:").replace("Carta Positiva:", "Positiva:") 
+                             for p in str(cartas_raw).replace("\n", " | ").split("|") if p.strip()]
+            cartas_txt = "\n".join(partes_cartas[:3])
+            
             nota = f"{float(item.get('nota', 0)):.0f}"
             resumo = sanitizar(item.get("resumo", ""))
 
-            pdf.cell(8, 7.5, pos, 1, 0, "C")
-            pdf.cell(28, 7.5, f" {comp[:18]}", 1, 0, "L")
+            # Cálculo de linhas reais para evitar corte e sobreposição
+            pdf.set_font("helvetica", "", 6.2)
+            palavras_r = resumo.split()
+            linhas_r = 1
+            linha_atual = ""
+            for p in palavras_r:
+                teste = f"{linha_atual} {p}".strip()
+                if pdf.get_string_width(teste) <= 93:
+                    linha_atual = teste
+                else:
+                    linhas_r += 1
+                    linha_atual = p
             
-            # Sub-bloco com cartas sem corte truncado
-            x_curr, y_curr = pdf.get_x(), pdf.get_y()
-            pdf.rect(x_curr, y_curr, 48, 7.5)
-            pdf.set_xy(x_curr + 0.5, y_curr + 0.5)
-            pdf.multi_cell(47, 3.2, sanitizar(cartas_limpas), border=0, align="L")
-            
-            pdf.set_xy(x_curr + 48, y_curr)
-            pdf.cell(10, 7.5, f"{nota}/5", 1, 0, "C")
+            total_linhas = max(3, len(partes_cartas[:3]), linhas_r)
+            row_h = (total_linhas * 3.2) + 2.0
 
-            # Sub-bloco com síntese detalhada
-            x_res = pdf.get_x()
-            pdf.rect(x_res, y_curr, 96, 7.5)
-            pdf.set_xy(x_res + 0.5, y_curr + 0.5)
-            pdf.multi_cell(95, 3.2, resumo, border=0, align="L")
-            pdf.set_xy(10, y_curr + 7.5)
+            y_row = pdf.get_y()
+
+            # POS
+            pdf.rect(10, y_row, 8, row_h)
+            pdf.set_xy(10, y_row + (row_h / 2) - 2)
+            pdf.set_font("helvetica", "B", 7)
+            pdf.cell(8, 4, pos, 0, 0, "C")
+
+            # COMPETÊNCIA
+            pdf.rect(18, y_row, 28, row_h)
+            pdf.set_xy(19, y_row + 1.2)
+            pdf.set_font("helvetica", "B", 7)
+            pdf.multi_cell(26, 3.4, comp, 0, "L")
+
+            # CARTAS
+            pdf.rect(46, y_row, 48, row_h)
+            pdf.set_xy(47, y_row + 1.2)
+            pdf.set_font("helvetica", "", 6.2)
+            pdf.multi_cell(46, 3.2, sanitizar(cartas_txt), 0, "L")
+
+            # NOTA
+            pdf.rect(94, y_row, 10, row_h)
+            pdf.set_xy(94, y_row + (row_h / 2) - 2)
+            pdf.set_font("helvetica", "B", 7)
+            pdf.cell(10, 4, f"{nota}/5", 0, 0, "C")
+
+            # RESUMO
+            pdf.rect(104, y_row, 96, row_h)
+            pdf.set_xy(105, y_row + 1.2)
+            pdf.set_font("helvetica", "", 6.2)
+            pdf.multi_cell(94, 3.2, resumo, 0, "L")
+
+            pdf.set_xy(10, y_row + row_h)
 
     # =========================================================================
     # PÁGINA 2: MATRIZ DAS 12 CASAS (FASE 2) E GOVERNANÇA CORPORATIVA
@@ -201,54 +251,114 @@ def gerar_laudo_fase3_pdf(
     pdf.set_fill_color(226, 232, 240)
     pdf.set_text_color(30, 41, 59)
 
-    pdf.cell(10, 5, "CASA", 1, 0, "C", True)
-    pdf.cell(32, 5, "SIGNO (CÚSPIDE)", 1, 0, "L", True)
-    pdf.cell(14, 5, "NOTA", 1, 0, "C", True)
-    pdf.cell(14, 5, "PESO", 1, 0, "C", True)
-    pdf.cell(46, 5, "CLIMA DE TRÂNSITO", 1, 0, "L", True)
-    pdf.cell(74, 5, "DIAGNÓSTICO (SÍNTESE)", 1, 1, "L", True)
+    pdf.cell(10, 5.5, "CASA", 1, 0, "C", True)
+    pdf.cell(32, 5.5, "SIGNO (CÚSPIDE)", 1, 0, "L", True)
+    pdf.cell(14, 5.5, "NOTA", 1, 0, "C", True)
+    pdf.cell(14, 5.5, "PESO", 1, 0, "C", True)
+    pdf.cell(48, 5.5, "CLIMA DE TRÂNSITO", 1, 0, "L", True)
+    pdf.cell(72, 5.5, "DIAGNÓSTICO (SÍNTESE)", 1, 1, "L", True)
 
-    pdf.set_font("helvetica", "", 6.8)
-    if mandala_dados:
-        casas_lista = mandala_dados if isinstance(mandala_dados, list) else list(mandala_dados.values())
-        for idx, m_item in enumerate(casas_lista, 1):
-            c_label = f"C{idx}"
-            # Mapeamento resiliente para evitar valores fixos
-            s_cuspide = sanitizar(m_item.get("signo_cuspide") or m_item.get("signo") or m_item.get("cuspide", "Estável"))
-            
-            raw_nota = m_item.get("nota_ajustada") or m_item.get("nota") or m_item.get("nota_base", 4.0)
-            n_val = f"{float(raw_nota):.1f}/5"
-            
-            raw_peso = m_item.get("peso") or m_item.get("peso_aplicado", 1.0)
-            p_val = f"{float(raw_peso):.1f}x"
-            
-            clima = sanitizar(m_item.get("clima_transito") or m_item.get("clima") or m_item.get("transito", "Estável"))
-            diag = sanitizar(m_item.get("diagnostico") or m_item.get("sintese") or m_item.get("resumo", "Estabilidade funcional."))
+    for i in range(1, 13):
+        k_casa = f"Casa {i}"
+        d_val = mandala_dados.get(k_casa, {}) if isinstance(mandala_dados, dict) else {}
+        
+        signo_base = d_val.get('signo', 'Estável')
+        grau_base = d_val.get('grau', '')
+        signo_str = f"{signo_base} ({grau_base})" if grau_base else signo_base
+        
+        nota_val = d_val.get('nota_base', d_val.get('nota', 4.0))
+        peso_val = d_val.get('peso', 1.0)
+        
+        clima_raw = str(d_val.get('clima', 'Estável'))
+        escopo_casa = ESCOPO_CORPORATIVO_CASA.get(i, "Gestão de processos")
 
-            y_linha = pdf.get_y()
-            pdf.cell(10, 8.5, c_label, 1, 0, "C")
-            pdf.cell(32, 8.5, f" {s_cuspide[:20]}", 1, 0, "L")
-            pdf.cell(14, 8.5, n_val, 1, 0, "C")
-            pdf.cell(14, 8.5, p_val, 1, 0, "C")
-            
-            # Bloco clima
-            x_clima = pdf.get_x()
-            pdf.rect(x_clima, y_linha, 46, 8.5)
-            pdf.set_xy(x_clima + 0.5, y_linha + 0.5)
-            pdf.multi_cell(45, 3.6, clima, border=0, align="L")
+        # Formatação e diagnósticos alinhados com o laudo da Fase 2
+        if any(p in clima_raw for p in ["Júpiter", "Jupiter"]):
+            clima_formatado = "[+] Ativado por Júpiter (Crescimento)"
+            diag_txt = f"Ciclo expansivo: alavanca para {escopo_casa.lower()} com alta projeção de resultados."
+        elif "Saturno" in clima_raw:
+            clima_formatado = "[!] Ativado por Saturno (Rigor)"
+            diag_txt = f"Ciclo de cobrança: exige auditoria, disciplina e controle rigoroso em {escopo_casa.lower()}."
+        elif "Urano" in clima_raw:
+            clima_formatado = "Ativado por Urano (Inovação)"
+            diag_txt = f"Ciclo disruptivo: impulsiona transformações ágeis e quebra de padrões em {escopo_casa.lower()}."
+        else:
+            clima_formatado = "Estável"
+            diag_txt = f"{escopo_casa} operando em estabilidade funcional."
 
-            # Bloco diagnóstico
-            x_diag = x_clima + 46
-            pdf.set_xy(x_diag, y_linha)
-            pdf.rect(x_diag, y_linha, 74, 8.5)
-            pdf.set_xy(x_diag + 0.5, y_linha + 0.5)
-            pdf.multi_cell(73, 3.6, diag, border=0, align="L")
+        # Linhas do diagnóstico
+        pdf.set_font("helvetica", "", 6.5)
+        palavras_d = diag_txt.split()
+        linhas_d = 1
+        linha_at = ""
+        for p in palavras_d:
+            teste = f"{linha_at} {p}".strip()
+            if pdf.get_string_width(teste) <= 70:
+                linha_at = teste
+            else:
+                linhas_d += 1
+                linha_at = p
 
-            pdf.set_xy(10, y_linha + 8.5)
+        row_h2 = max(8.0, (linhas_d * 3.4) + 2.0)
+        y_l2 = pdf.get_y()
 
-    pdf.ln(12)
+        # CASA
+        pdf.rect(10, y_l2, 10, row_h2)
+        pdf.set_xy(10, y_l2 + (row_h2 / 2) - 2)
+        pdf.set_font("helvetica", "B", 7)
+        pdf.cell(10, 4, f"C{i}", 0, 0, "C")
 
-    # Assinaturas formais de governança
+        # SIGNO
+        pdf.rect(20, y_l2, 32, row_h2)
+        pdf.set_xy(21, y_l2 + 1.2)
+        pdf.set_font("helvetica", "", 6.5)
+        pdf.multi_cell(30, 3.2, sanitizar(signo_str), 0, "L")
+
+        # NOTA
+        pdf.rect(52, y_l2, 14, row_h2)
+        pdf.set_xy(52, y_l2 + (row_h2 / 2) - 2)
+        pdf.set_font("helvetica", "B", 7)
+        pdf.cell(14, 4, f"{float(nota_val):.1f}/5", 0, 0, "C")
+
+        # PESO
+        pdf.rect(66, y_l2, 14, row_h2)
+        pdf.set_xy(66, y_l2 + (row_h2 / 2) - 2)
+        pdf.set_font("helvetica", "", 7)
+        pdf.cell(14, 4, f"{float(peso_val):.1f}x", 0, 0, "C")
+
+        # CLIMA
+        pdf.rect(80, y_l2, 48, row_h2)
+        pdf.set_xy(81, y_l2 + 1.2)
+        esta_ativ = any(p in clima_formatado for p in ["Júpiter", "Saturno", "Urano"])
+        pdf.set_font("helvetica", "B" if esta_ativ else "", 6.5)
+        pdf.multi_cell(46, 3.2, sanitizar(clima_formatado), 0, "L")
+
+        # DIAGNÓSTICO
+        pdf.rect(128, y_l2, 72, row_h2)
+        pdf.set_xy(129, y_l2 + 1.2)
+        pdf.set_font("helvetica", "", 6.5)
+        pdf.multi_cell(70, 3.2, sanitizar(diag_txt), 0, "L")
+
+        pdf.set_xy(10, y_l2 + row_h2)
+
+    # 5. Diretrizes para o Plano de Integração (90 Dias)
+    pdf.ln(4)
+    pdf.set_font("helvetica", "B", 8.5)
+    pdf.set_text_color(24, 43, 73)
+    pdf.cell(0, 5, sanitizar("5. DIRETRIZES PARA O PLANO DE INTEGRAÇÃO (90 DIAS)"), 0, 1, "L")
+    pdf.set_font("helvetica", "", 7.2)
+    pdf.set_text_color(30, 41, 59)
+    pdf.set_fill_color(248, 250, 252)
+
+    plano_texto = (
+        "Dias 1 a 30: Imersão institucional, alinhamento de expectativas com a diretoria e mapeamento de processos críticos.\n"
+        "Dias 31 a 60: Assunção gradual de entregas táticas, liderança de comitês operacionais e validação de indicadores de desempenho.\n"
+        "Dias 61 a 90: Avaliação de impacto de 90 dias, entrega de projetos estruturantes e consolidação da governança sob o arquétipo."
+    )
+    pdf.multi_cell(0, 3.8, sanitizar(plano_texto), border=1, fill=True)
+    pdf.ln(8)
+
+    # Governança e Assinaturas
     y_sign = pdf.get_y()
     pdf.set_draw_color(100, 116, 139)
     pdf.line(20, y_sign, 85, y_sign)
@@ -257,7 +367,7 @@ def gerar_laudo_fase3_pdf(
     pdf.set_xy(20, y_sign + 1)
     pdf.set_font("helvetica", "B", 7.5)
     pdf.set_text_color(71, 85, 105)
-    pdf.cell(65, 4, sanitizar("COMITÊ AVALIADOR / RH"), 0, 0, "C")
+    pdf.cell(65, 4, sanitizar("COMITÊ AVALIADOR / RECURSOS HUMANOS"), 0, 0, "C")
 
     pdf.set_xy(125, y_sign + 1)
     pdf.cell(65, 4, sanitizar("DIRETORIA EXECUTIVA / COMPLIANCE"), 0, 1, "C")
