@@ -1153,22 +1153,24 @@ with tab3:
                     "resumo": extrair_sintese_competencia(texto_ia_laudo, idx_c, competencias_nomes[idx_c - 1])
                 })
 
-            # Geração do Dossiê Master Unificado
+  # Geração do Dossiê Master Unificado
             pdf_fase3_bytes = gerar_laudo_fase3_pdf(
                 c_nome, c_vaga, c_nivel, arq_ativo_ficha,
                 perc_t1, perc_t2, indice_global, classificacao,
                 sinal_vermelho, texto_conclusao_f3, mandala_dados, dados_tabela_f1
             )
 
-            st.download_button(
-                label="📄 Baixar Dossiê Executivo Master Integrado em PDF (Fase 3)",
-                data=pdf_fase3_bytes,
-                file_name=f"Laudo_Executivo_Integrado_{(c_nome or 'Candidato').replace(' ', '_')}.pdf",
-                mime="application/pdf",
-                use_container_width=True
-            )
+            col_a1, col_a2 = st.columns(2)
+            with col_a1:
+                st.download_button(
+                    label="📄 Baixar Dossiê Executivo Master Integrado em PDF (Fase 3)",
+                    data=pdf_fase3_bytes,
+                    file_name=f"Laudo_Executivo_Integrado_{(c_nome or 'Candidato').replace(' ', '_')}.pdf",
+                    mime="application/pdf",
+                    use_container_width=True
+                )
             with col_a2:
-                if st.button("💾 Salvar no Banco Dinâmico (SQLite)"):
+                if st.button("💾 Salvar no Banco Dinâmico (SQLite)", use_container_width=True):
                     if c_nome in ["", "Candidato(a)"]:
                         st.error("Informe um nome de candidato válido.")
                     else:
@@ -1183,7 +1185,8 @@ with tab3:
                             int(indice_global), classificacao, sinal_vermelho, arq_ativo_ficha,
                             tokens_in=t_in, tokens_out=t_out, custo_brl=c_brl
                         )
-                        if ok: st.success("✅ Salvo com sucesso no banco de dados!")
+                        if ok:
+                            st.success("✅ Salvo com sucesso no banco de dados!")
 
             st.markdown("---")
             st.subheader("🖨️ Exportação de Laudo Executivo em PDF Profissional (WeasyPrint / Layout Avançado)")
