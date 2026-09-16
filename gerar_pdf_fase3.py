@@ -49,26 +49,38 @@ def gerar_laudo_fase3_pdf(
         pdf.cell(0, 6, "DETALHAMENTO DAS 8 CASAS / DIMENSOES", 0, 1, "L")
         pdf.set_font("helvetica", "B", 8)
         pdf.set_fill_color(226, 232, 240)
-        
-        # Cabeçalhos da Tabela
-        pdf.cell(100, 6, " Dimensão / Casa", 1, 0, "L", True)
-        pdf.cell(40, 6, " Configuração", 1, 0, "C", True)
-        pdf.cell(50, 6, " Nota Base", 1, 1, "C", True)
-        
+
+        # Cabeçalhos da Tabela (largura total: 190mm)
+        pdf.cell(95, 6, " Dimensão / Competência", 1, 0, "L", True)
+        pdf.cell(55, 6, " Carta Central (Arquétipo)", 1, 0, "L", True)
+        pdf.cell(40, 6, " Nota Base", 1, 1, "C", True)
+
         pdf.set_font("helvetica", "", 8)
         for d_val in dados_tabela_f1:
-            raw_nota = d_val.get('nota_base', 0)
+            # Compatibilidade de nota ('nota' ou 'nota_base')
+            raw_nota = d_val.get('nota') if d_val.get('nota') is not None else d_val.get('nota_base', 0)
             try:
                 nota_val = float(raw_nota)
             except (TypeError, ValueError):
                 nota_val = 0.0
-                
-            casa_nome = str(d_val.get('casa', 'Casa'))
-            cfg_nome = str(d_val.get('configuracao', 'N/A'))
-            
-            pdf.cell(100, 5.5, f" {casa_nome}", 1, 0, "L")
-            pdf.cell(40, 5.5, f"{cfg_nome}", 1, 0, "C")
-            pdf.cell(50, 5.5, f"{nota_val:.1f}/5", 1, 1, "C")
+
+            # Nome e posição da competência ('nome' ou 'casa')
+            pos_num = d_val.get('pos', '')
+            nome_comp = d_val.get('nome') or d_val.get('casa', 'Dimensão')
+            casa_nome = f"{pos_num}. {nome_comp}" if pos_num else str(nome_comp)
+
+            # Extrai a carta central principal a partir da string de cartas
+            cfg_raw = str(d_val.get('configuracao') or d_val.get('cartas', 'N/A'))
+            if "Central:" in cfg_raw:
+                cfg_nome = cfg_raw.splitlines()[0].replace("Central:", "").strip()
+            elif "\n" in cfg_raw:
+                cfg_nome = cfg_raw.splitlines()[0].strip()
+            else:
+                cfg_nome = cfg_raw.strip()
+
+            pdf.cell(95, 5.5, f" {casa_nome}", 1, 0, "L")
+            pdf.cell(55, 5.5, f" {cfg_nome}", 1, 0, "L")
+            pdf.cell(40, 5.5, f"{nota_val:.1f}/5", 1, 1, "C")
         pdf.ln(5)
         
     # Parecer Técnico e Deliberativo
