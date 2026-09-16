@@ -1153,20 +1153,20 @@ with tab3:
                     "resumo": extrair_sintese_competencia(texto_ia_laudo, idx_c, competencias_nomes[idx_c - 1])
                 })
 
+            # Geração do Dossiê Master Unificado
             pdf_fase3_bytes = gerar_laudo_fase3_pdf(
                 c_nome, c_vaga, c_nivel, arq_ativo_ficha,
                 perc_t1, perc_t2, indice_global, classificacao,
                 sinal_vermelho, texto_conclusao_f3, mandala_dados, dados_tabela_f1
             )
 
-            col_a1, col_a2 = st.columns(2)
-            with col_a1:
-                st.download_button(
-                    "📄 Baixar Laudo Executivo Integrado em PDF (Fase 3)",
-                    data=pdf_fase3_bytes,
-                    file_name=f"Laudo_Executivo_Integrado_{(c_nome or 'Candidato').replace(' ', '_')}.pdf",
-                    mime="application/pdf"
-                )
+            st.download_button(
+                label="📄 Baixar Dossiê Executivo Master Integrado em PDF (Fase 3)",
+                data=pdf_fase3_bytes,
+                file_name=f"Laudo_Executivo_Integrado_{(c_nome or 'Candidato').replace(' ', '_')}.pdf",
+                mime="application/pdf",
+                use_container_width=True
+            )
             with col_a2:
                 if st.button("💾 Salvar no Banco Dinâmico (SQLite)"):
                     if c_nome in ["", "Candidato(a)"]:
