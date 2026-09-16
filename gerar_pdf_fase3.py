@@ -78,9 +78,12 @@ def gerar_laudo_fase3_pdf(
     texto_final = str(texto_conclusao_f3 or "Avaliação executiva concluída com cruzamento ponderado de dados e diretrizes de governança.")
     pdf.multi_cell(0, 4.5, texto_final, border=1, fill=True)
     
-    # Gravação do arquivo PDF de saída
-    res = pdf.output(dest="S")
-    with open(output_pdf, "wb") as f:
-        f.write(res.encode("latin1") if isinstance(res, str) else bytes(res))
-        
-    return output_pdf
+    # Gravação e retorno dos bytes binários do PDF
+    pdf_bytes = bytes(pdf.output())
+    try:
+        with open(output_pdf, "wb") as f:
+            f.write(pdf_bytes)
+    except Exception:
+        pass
+
+    return pdf_bytes
