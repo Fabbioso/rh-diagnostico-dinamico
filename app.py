@@ -264,6 +264,10 @@ def extrair_sintese_competencia(texto_ia, pos_num, nome_comp):
     return "Avaliação metodológica integrada dos arcanos alinhada à competência."
 
 def obter_ou_gerar_analise_ia(c_nome, c_vaga, arq_ativo):
+    cache_key = f"ai_analise_{c_nome}_{c_vaga}"
+    if cache_key in st.session_state:
+        return st.session_state[cache_key]
+    
     dados_casas = {}
     competencias_nomes = [
         "Hard Skills", "Soft Skills", "Fit Cultural", 
@@ -278,11 +282,6 @@ def obter_ou_gerar_analise_ia(c_nome, c_vaga, arq_ativo):
             "positiva": st.session_state.get(f"t_positiva_{i}", "Não informada"),
             "nota": st.session_state.get(f"t_pontos_{i}", 3)
         }
-
-    assinatura = repr((c_nome, c_vaga, arq_ativo, dados_casas))
-    cache_key = f"ai_analise_{hash(assinatura)}"
-    if cache_key in st.session_state:
-        return st.session_state[cache_key]
 
     if GEMINI_API_DISPONIVEL:
         try:
@@ -330,9 +329,7 @@ def obter_ou_gerar_analise_ia(c_nome, c_vaga, arq_ativo):
             st.error(msg_erro)
             return msg_erro
     else:
-        texto_padrao = "Análise qualitativa padrão (Configure a GEMINI_API_KEY em st.secrets para habilitar a geração avançada por IA)."
-        st.session_state[cache_key] = texto_padrao
-        return texto_padrao
+        return "Análise qualitativa padrão (Configure a GEMINI_API_KEY em st.secrets para habilitar a geração avançada por IA)."
 
 def classificar_arquétipo_manual(vaga_texto, selecao_manual="Automático (Detectado por IA)"):
     if selecao_manual != "Automático (Detectado por IA)":
@@ -461,10 +458,6 @@ if "astro_data_raw" not in st.session_state: st.session_state["astro_data_raw"] 
 if "astro_local" not in st.session_state: st.session_state["astro_local"] = "São Paulo, SP"
 if "astro_hora" not in st.session_state: st.session_state["astro_hora"] = datetime.strptime("12:00", "%H:%M").time()
 if "input_nome_cand" not in st.session_state: st.session_state["input_nome_cand"] = ""
-if "input_vaga_cand" not in st.session_state: st.session_state["input_vaga_cand"] = ""
-if "input_nivel_cand" not in st.session_state: st.session_state["input_nivel_cand"] = "C-Level / Executivo"
-if "select_override_arq" not in st.session_state: st.session_state["select_override_arq"] = "Automático (Detectado por IA)"
-if "astro_sistema_casas" not in st.session_state: st.session_state["astro_sistema_casas"] = "Plácidus"
 
 def disparar_nova_avaliacao():
     st.session_state["input_nome_cand"] = ""
@@ -473,8 +466,6 @@ def disparar_nova_avaliacao():
     st.session_state["astro_data_raw"] = "01/01/1999"
     st.session_state["astro_hora"] = datetime.strptime("12:00", "%H:%M").time()
     st.session_state["astro_local"] = "São Paulo, SP"
-    st.session_state["astro_sistema_casas"] = "Plácidus"
-    st.session_state["select_override_arq"] = "Automático (Detectado por IA)"
     st.session_state["ficha_gerada"] = False
     for key in list(st.session_state.keys()):
         if key.startswith("ai_analise_") or key.startswith("cost_"):
@@ -482,11 +473,6 @@ def disparar_nova_avaliacao():
     if "mandala_calculada" in st.session_state: del st.session_state["mandala_calculada"]
     if "big_three_calculado" in st.session_state: del st.session_state["big_three_calculado"]
     if "transitos_calculados" in st.session_state: del st.session_state["transitos_calculados"]
-    for key in [
-        "pdf_fase1_bytes", "pdf_fase2_bytes", "pdf_fase3_bytes",
-        "pdf_fase1_assinatura", "pdf_fase2_assinatura", "pdf_fase3_assinatura",
-    ]:
-        st.session_state.pop(key, None)
     for i in range(1, 9):
         st.session_state[f"t_central_{i}"] = ""
         st.session_state[f"t_negativa_{i}"] = ""
@@ -532,64 +518,38 @@ with tab1:
         cursor_db.execute("SELECT DISTINCT nome FROM avaliacoes")
         candidatos_existentes = [row[0] for row in cursor_db.fetchall() if row[0]]
 
-    with st.form("form_candidato"):
-        tipo_cad_form = st.radio("Modo de Candidato", ["Selecionar Existente", "Cadastrar Novo"], index=1, horizontal=True)
-        col_c1, col_c2, col_c3 = st.columns(3)
-        with col_c1:
-            if tipo_cad_form == "Selecionar Existente" and candidatos_existentes:
-                escolha_cand_form = st.selectbox("Candidato(a) Registrado", ["Selecionar Candidato Cadastrado..."] + candidatos_existentes)
-                nome_candidato_form = escolha_cand_form if escolha_cand_form != "Selecionar Candidato Cadastrado..." else ""
-            else:
-                nome_candidato_form = st.text_input("Nome Completo do Novo Candidato(a)", value=st.session_state.get("input_nome_cand", ""))
-        with col_c2:
-            vaga_cargo_form = st.text_input("Vaga / Cargo Pretendido", value=st.session_state.get("input_vaga_cand", ""))
-        with col_c3:
-            niveis = ["C-Level / Executivo", "Diretor", "Gerente", "Supervisor", "Coordenador", "Especialista / Analista", "Técnico", "Operacional"]
-            nivel_hierarquico_form = st.selectbox("Nível Hierárquico", niveis, index=niveis.index(st.session_state.get("input_nivel_cand", niveis[0])))
+    tipo_cad = st.radio("Modo de Candidato", ["Selecionar Existente", "Cadastrar Novo"], index=1, horizontal=True, key="tipo_cad_modo")
 
-        arquetipos = [
+    col_c1, col_c2, col_c3 = st.columns(3)
+    with col_c1:
+        if tipo_cad == "Selecionar Existente":
+            if candidatos_existentes:
+                escolha_cand = st.selectbox("Candidato(a) Registrado", ["Selecionar Candidato Cadastrado..."] + candidatos_existentes, key="select_cand_existente_ativo")
+                nome_candidato = escolha_cand if escolha_cand != "Selecionar Candidato Cadastrado..." else ""
+            else:
+                st.info("Nenhum candidato registrado.")
+                nome_candidato = ""
+        else:
+            nome_candidato = st.text_input("Nome Completo do Novo Candidato(a)", key="input_nome_cand")
+
+    with col_c2:
+        vaga_cargo = st.text_input("Vaga / Cargo Pretendido", key="input_vaga_cand")
+    with col_c3:
+        nivel_hierarquico = st.selectbox("Nível Hierárquico", ["C-Level / Executivo", "Diretor", "Gerente", "Supervisor", "Coordenador", "Especialista / Analista", "Técnico", "Operacional"], key="input_nivel_cand")
+
+    modo_arq_input = st.selectbox(
+        "Ajuste de Arquétipo (Automático ou Forçado)",
+        [
             "Automático (Detectado por IA)",
             "Inovação, Estratégia e Expansão",
             "Governança, Compliance e Riscos",
             "Operações, Processos e Manutenção",
             "Comercial, Negócios e Relacionamento",
             "Padrão / Geral"
-        ]
-        modo_arq_form = st.selectbox("Ajuste de Arquétipo (Automático ou Forçado)", arquetipos, index=arquetipos.index(st.session_state.get("select_override_arq", arquetipos[0])))
+        ],
+        key="select_override_arq"
+    )
 
-        col_a1, col_a2, col_a3, col_a4 = st.columns(4)
-        with col_a1:
-            data_nasc_form = st.text_input("Data de Nascimento (DD/MM/AAAA)", value=st.session_state.get("astro_data_raw", "01/01/1999"))
-        with col_a2:
-            hora_nasc_form = st.time_input("Horário de Nascimento", value=st.session_state.get("astro_hora"))
-        with col_a3:
-            local_nasc_form = st.text_input("Local de Nascimento (Cidade/Estado)", value=st.session_state.get("astro_local", "São Paulo, SP"))
-        with col_a4:
-            sistemas_casas = ["Plácidus", "Koch", "Signo Inteiro"]
-            sistema_casas_form = st.selectbox("Sistema de Casas", sistemas_casas, index=sistemas_casas.index(st.session_state.get("astro_sistema_casas", sistemas_casas[0])))
-        cadastro_enviado = st.form_submit_button("Salvar cadastro e continuar", use_container_width=True)
-
-    if cadastro_enviado:
-        st.session_state["input_nome_cand"] = nome_candidato_form
-        st.session_state["input_vaga_cand"] = vaga_cargo_form
-        st.session_state["input_nivel_cand"] = nivel_hierarquico_form
-        st.session_state["select_override_arq"] = modo_arq_form
-        st.session_state["astro_data_raw"] = data_nasc_form
-        st.session_state["astro_hora"] = hora_nasc_form
-        st.session_state["astro_local"] = local_nasc_form
-        st.session_state["astro_sistema_casas"] = sistema_casas_form
-        for key in [
-            "pdf_fase1_bytes", "pdf_fase2_bytes", "pdf_fase3_bytes",
-            "pdf_fase1_assinatura", "pdf_fase2_assinatura", "pdf_fase3_assinatura",
-            "mandala_calculada", "big_three_calculado", "transitos_calculados",
-        ]:
-            st.session_state.pop(key, None)
-        st.success("Cadastro salvo. Prossiga com a avaliação.")
-
-    nome_candidato = st.session_state.get("input_nome_cand", "")
-    vaga_cargo = st.session_state.get("input_vaga_cand", "")
-    nivel_hierarquico = st.session_state.get("input_nivel_cand", "C-Level / Executivo")
-    modo_arq_input = st.session_state.get("select_override_arq", "Automático (Detectado por IA)")
     arq_nome, arq_pesos = classificar_arquétipo_manual(vaga_cargo, modo_arq_input)
     st.info(f"🎯 **Arquétipo Corporativo Ativo:** `{arq_nome}` (Aplicando pesos customizados na Fase 2)")
 
@@ -653,16 +613,7 @@ with tab1:
     st.info(f"📊 **Resultado Individual da Fase 1 (Tarot):** {total_t1} / 40 pontos ({perc_t1:.1f}% de aderência comportamental)")
 
     c_nome_val = nome_candidato if 'nome_candidato' in locals() else st.session_state.get("input_nome_cand", "")
-    dados_casas_cache = {
-        i: {
-            "central": st.session_state.get(f"t_central_{i}", "Não informada"),
-            "negativa": st.session_state.get(f"t_negativa_{i}", "Não informada"),
-            "positiva": st.session_state.get(f"t_positiva_{i}", "Não informada"),
-            "nota": st.session_state.get(f"t_pontos_{i}", 3),
-        }
-        for i in range(1, 9)
-    }
-    cache_key_check = f"ai_analise_{hash(repr((c_nome_val, vaga_cargo, arq_nome, dados_casas_cache)))}"
+    cache_key_check = f"ai_analise_{c_nome_val}_{vaga_cargo}"
     
     if st.button("🤖 Gerar Análise Qualitativa por IA (Fase 1)"):
         with st.spinner("Consultando o Gemini 3.8 Flash para gerar o parecer completo das 8 casas..."):
@@ -947,11 +898,7 @@ with tab1:
         return res.encode("latin1") if isinstance(res, str) else bytes(res)
 
     if cache_key_check in st.session_state:
-        pdf_fase1_assinatura = repr((cache_key_check, total_t1, classificacao_f1, sinal_vermelho_f1))
-        if st.session_state.get("pdf_fase1_assinatura") != pdf_fase1_assinatura:
-            st.session_state["pdf_fase1_bytes"] = gerar_ficha_pdf_fase1(c_nome_val, vaga_cargo, total_t1, classificacao_f1, sinal_vermelho_f1)
-            st.session_state["pdf_fase1_assinatura"] = pdf_fase1_assinatura
-        pdf_stream = st.session_state["pdf_fase1_bytes"]
+        pdf_stream = gerar_ficha_pdf_fase1(c_nome_val, vaga_cargo, total_t1, classificacao_f1, sinal_vermelho_f1)
         st.download_button(
             label="📥 Baixar Ficha de Avaliação Completa em PDF",
             data=pdf_stream,
@@ -968,12 +915,13 @@ with tab2:
     if not KERYKEION_DISPONIVEL:
         st.warning(f"⚠️ Kerykeion indisponível: `{KERYKEION_ERRO or 'Módulo não carregado'}`")
 
-    data_nasc_raw = st.session_state.get("astro_data_raw", "01/01/1999")
-    local_nasc = st.session_state.get("astro_local", "São Paulo, SP")
-    hora_nasc = st.session_state.get("astro_hora")
-    sistema_casas = st.session_state.get("astro_sistema_casas", "Plácidus")
-
-    @st.cache_data(show_spinner=False)
+    col_astro1, col_astro2 = st.columns(2)
+    with col_astro1:
+        data_nasc_raw = st.text_input("Data de Nascimento (DD/MM/AAAA)", placeholder="02/05/1978")
+        local_nasc = st.text_input("Local de Nascimento (Cidade/Estado)", placeholder="São Paulo, SP")
+    with col_astro2:
+        hora_nasc = st.time_input("Horário de Nascimento", key="astro_hora")
+        sistema_casas = st.selectbox("Sistema de Casas", ["Plácidus", "Koch", "Signo Inteiro"], index=0)
     def calcular_mandala_ponderada_com_transitos(d_nasc_str, h_nasc, loc, pesos_dict):
         if not d_nasc_str or h_nasc is None or not loc or not loc.strip():
             st.error("⚠️ Preencha Data, Horário e Local de Nascimento.")
@@ -1155,21 +1103,20 @@ with tab2:
         st.info(f"🌟 **Resultado Ponderado & Conjuntural da Fase 2 ({st.session_state.get('arq_utilizado', 'Padrão')}):** {total_t2_ajustado:.1f} / 60 pontos ({perc_t2:.1f}% de aderência estrutural ajustada ao momento)")
         st.markdown("")
 
-        pdf_fase2_assinatura = repr((
-            st.session_state["mandala_calculada"], st.session_state["big_three_calculado"],
-            st.session_state.get("transitos_calculados", {}), total_t2_ajustado, perc_t2,
-            nome_candidato, vaga_cargo, nivel_hierarquico,
-        ))
-        if st.session_state.get("pdf_fase2_assinatura") != pdf_fase2_assinatura:
-            st.session_state["pdf_fase2_bytes"] = gerar_laudo_fase2_pdf(
-                nome_candidato, vaga_cargo, nivel_hierarquico,
-                st.session_state.get("arq_utilizado", arq_nome), data_nasc_raw, hora_nasc,
-                st.session_state.get("astro_loc_resolvido", local_nasc),
-                st.session_state["big_three_calculado"], st.session_state.get("transitos_calculados", {}),
-                st.session_state["mandala_calculada"], total_t2_ajustado, perc_t2
-            )
-            st.session_state["pdf_fase2_assinatura"] = pdf_fase2_assinatura
-        pdf_fase2_bytes = st.session_state["pdf_fase2_bytes"]
+        pdf_fase2_bytes = gerar_laudo_fase2_pdf(
+            nome_candidato if 'nome_candidato' in locals() else st.session_state.get("input_nome_cand", "Candidato"),
+            vaga_cargo,
+            nivel_hierarquico,
+            st.session_state.get("arq_utilizado", arq_nome),
+            data_nasc_raw,
+            hora_nasc,
+            st.session_state.get("astro_loc_resolvido", local_nasc),
+            st.session_state["big_three_calculado"],
+            st.session_state.get("transitos_calculados", {}),
+            st.session_state["mandala_calculada"],
+            total_t2_ajustado,
+            perc_t2
+        )
         
         st.download_button(
             label="📥 Baixar Laudo Estrutural e Conjuntural em PDF (Fase 2)",
@@ -1219,9 +1166,7 @@ with tab3:
         p6, p7, p8 = st.session_state.get("t_pontos_6", 3), st.session_state.get("t_pontos_7", 3), st.session_state.get("t_pontos_8", 3)
         sinal_vermelho = "Sim" if (p6 <= 2 or p7 <= 2 or p8 <= 2) else "Não"
 
-        if sinal_vermelho == "Sim":
-            classificacao = "Não Recomendado (Sinal Vermelho Ativado)"
-        elif indice_global >= 80:
+        if indice_global >= 80:
             classificacao = "Altamente Recomendado (Aderência Superior a 80%)"
         elif indice_global >= 65:
             classificacao = "Recomendado com Ressalvas (Aderência entre 65% e 79%)"
@@ -1312,19 +1257,11 @@ with tab3:
                 })
 
   # Geração do Dossiê Master Unificado
-            pdf_fase3_assinatura = repr((
+            pdf_fase3_bytes = gerar_laudo_fase3_pdf(
                 c_nome, c_vaga, c_nivel, arq_ativo_ficha,
                 perc_t1, perc_t2, indice_global, classificacao,
-                sinal_vermelho, texto_conclusao_f3, mandala_dados, dados_tabela_f1,
-            ))
-            if st.session_state.get("pdf_fase3_assinatura") != pdf_fase3_assinatura:
-                st.session_state["pdf_fase3_bytes"] = gerar_laudo_fase3_pdf(
-                    c_nome, c_vaga, c_nivel, arq_ativo_ficha,
-                    perc_t1, perc_t2, indice_global, classificacao,
-                    sinal_vermelho, texto_conclusao_f3, mandala_dados, dados_tabela_f1
-                )
-                st.session_state["pdf_fase3_assinatura"] = pdf_fase3_assinatura
-            pdf_fase3_bytes = st.session_state["pdf_fase3_bytes"]
+                sinal_vermelho, texto_conclusao_f3, mandala_dados, dados_tabela_f1
+            )
 
             col_a1, col_a2 = st.columns(2)
             with col_a1:
