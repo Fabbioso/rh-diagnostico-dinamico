@@ -166,16 +166,16 @@ def extrair_secao_competencia(texto_ia, pos_num, nome_comp):
         rf"(?:{pos_num}\.|\b{pos_num}\b)\s*{re.escape(nome_comp)}"
     ]
     
+    cabecalho_conclusao = r"^(?:\s*(?:#{1,6}|\*\*)?\s*(?:\d+\.\s*)?(?:\*\*)?\s*CONCLUS[ÃA]O\s*(?:\*\*)?\s*:?(?:\s|$))"
     proximos_marcadores = [
         r"(?:###?\s*)?\d+\.\s*[A-Z]",
         r"Casa\s*\d+\s*:",
-        r"(?:###?\s*)?CONCLUSÃO",
-        r"CONCLUSÃO"
+        cabecalho_conclusao
     ]
     reg_proximos = "|".join(proximos_marcadores)
     
     for padrao in padroes_secao:
-        match = re.search(rf"{padrao}(.*?)(?={reg_proximos}|$)", texto_ia, re.DOTALL | re.IGNORECASE)
+        match = re.search(rf"{padrao}(.*?)(?={reg_proximos}|$)", texto_ia, re.DOTALL | re.IGNORECASE | re.MULTILINE)
         if match and len(match.group(1).strip()) > 15:
             trecho = match.group(1).strip()
             trecho = re.sub(r"^\s*\(Nota:\s*\d+/\d+\)\s*", "", trecho, flags=re.IGNORECASE)
@@ -788,7 +788,11 @@ with tab1:
 
             pdf.set_xy(10, y_box + 6.0 + 5.0 + h_corpo_total + 5.0)
 
-        match_conclusao = re.search(r"(?:###?\s*)?CONCLUSÃO(.*?)$", texto_ia_doc, re.DOTALL | re.IGNORECASE)
+        match_conclusao = re.search(
+            r"^(?:\s*(?:#{1,6}|\*\*)?\s*(?:\d+\.\s*)?(?:\*\*)?\s*CONCLUS[ÃA]O\s*(?:\*\*)?\s*:?(?:\s|$))(.*)$",
+            texto_ia_doc,
+            re.DOTALL | re.IGNORECASE | re.MULTILINE,
+        )
         if match_conclusao and len(match_conclusao.group(1).strip()) > 10:
             texto_conclusao = match_conclusao.group(1).strip()
             texto_conclusao = re.sub(r"^\s*[:\-–]\s*", "", texto_conclusao)
@@ -1136,7 +1140,11 @@ with tab3:
             st.write(f"Avaliação direcionada ao arquétipo **{arq_ativo_ficha}** para a posição de **{c_vaga}**. O cruzamento integra a análise comportamental e o ciclo conjuntural ativo de trânsitos, resultando em um **Índice Global de {indice_global:.1f}%** (*{classificacao}*).")
 
             texto_ia_laudo = obter_ou_gerar_analise_ia(c_nome, c_vaga, arq_ativo_ficha)
-            match_conclusao_laudo = re.search(r"(?:###?\s*)?CONCLUSÃO(.*?)$", texto_ia_laudo, re.DOTALL | re.IGNORECASE)
+            match_conclusao_laudo = re.search(
+                r"^(?:\s*(?:#{1,6}|\*\*)?\s*(?:\d+\.\s*)?(?:\*\*)?\s*CONCLUS[ÃA]O\s*(?:\*\*)?\s*:?(?:\s|$))(.*)$",
+                texto_ia_laudo,
+                re.DOTALL | re.IGNORECASE | re.MULTILINE,
+            )
             if match_conclusao_laudo and len(match_conclusao_laudo.group(1).strip()) > 10:
                 texto_conclusao_f3 = match_conclusao_laudo.group(1).strip()
                 texto_conclusao_f3 = re.sub(r"^\s*[:\-–]\s*", "", texto_conclusao_f3)
