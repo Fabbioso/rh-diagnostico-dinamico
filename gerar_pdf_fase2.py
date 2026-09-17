@@ -16,6 +16,16 @@ def sanitizar_pdf(texto):
     except Exception:
         return str(texto)
 
+def formatar_cuspide(val):
+    if not val:
+        return "0° 0'"
+    nums = re.findall(r'\d+', str(val))
+    if len(nums) >= 2:
+        return f"{nums[0]}° {nums[1]}'"
+    if len(nums) == 1:
+        return f"{nums[0]}° 0'"
+    return str(val)
+
 def formatar_data_exibicao(d_str):
     digitos = "".join(filter(str.isdigit, str(d_str)))
     if len(digitos) == 8:
@@ -84,21 +94,21 @@ def gerar_laudo_fase2_pdf(c_nome, c_vaga, c_nivel, arq_ativo, d_nasc, h_nasc, lo
     pdf.set_font("helvetica", "B", 7.5)
     pdf.cell(w_col, 4, "SIGNO SOLAR (Identidade/Propósito)", 0, 1, "C")
     pdf.set_font("helvetica", "", 7.5)
-    pdf.cell(w_col, 4, sanitizar_pdf(f"{sol.get('signo', '-')} ({sol.get('grau', '-')})"), 0, 0, "C")
+    pdf.cell(w_col, 4, sanitizar_pdf(f"{sol.get('signo', '-')} ({formatar_cuspide(sol.get('grau', ''))})"), 0, 0, "C")
     
     pdf.set_xy(10 + w_col, y_b3 + 1.5)
     pdf.set_font("helvetica", "B", 7.5)
     pdf.cell(w_col, 4, "SIGNO ASCENDENTE (Expressão/Postura)", 0, 1, "C")
     pdf.set_x(10 + w_col)
     pdf.set_font("helvetica", "", 7.5)
-    pdf.cell(w_col, 4, sanitizar_pdf(f"{asc.get('signo', '-')} ({asc.get('grau', '-')})"), 0, 0, "C")
+    pdf.cell(w_col, 4, sanitizar_pdf(f"{asc.get('signo', '-')} ({formatar_cuspide(asc.get('grau', ''))})"), 0, 0, "C")
     
     pdf.set_xy(10 + (2 * w_col), y_b3 + 1.5)
     pdf.set_font("helvetica", "B", 7.5)
     pdf.cell(w_col, 4, "SIGNO LUNAR (Maturidade Emocional)", 0, 1, "C")
     pdf.set_x(10 + (2 * w_col))
     pdf.set_font("helvetica", "", 7.5)
-    pdf.cell(w_col, 4, sanitizar_pdf(f"{lua.get('signo', '-')} ({lua.get('grau', '-')})"), 0, 1, "C")
+    pdf.cell(w_col, 4, sanitizar_pdf(f"{lua.get('signo', '-')} ({formatar_cuspide(lua.get('grau', ''))})"), 0, 1, "C")
     
     pdf.set_xy(10, y_b3 + 14)
     
@@ -158,7 +168,7 @@ def gerar_laudo_fase2_pdf(c_nome, c_vaga, c_nivel, arq_ativo, d_nasc, h_nasc, lo
     for i in range(1, 13):
         k_casa = f"Casa {i}"
         d_val = mandala_dados.get(k_casa, {})
-        signo_str = f"{d_val.get('signo', '')} ({d_val.get('grau', '')})"
+        signo_str = f"{d_val.get('signo', '')} ({formatar_cuspide(d_val.get('grau', ''))})"
         clima_raw = d_val.get('clima', 'Estável')
         escopo_casa = ESCOPO_CORPORATIVO_CASA.get(i, "Gestão de processos")
         

@@ -104,8 +104,15 @@ def gerar_laudo_fase3_pdf(
     p1 = float(perc_t1 or 0)
     p2 = float(perc_t2 or 0)
     ig = float(indice_global or 0)
-    classif_str = sanitizar(classificacao or "Avaliado")
     sinal_v = str(sinal_vermelho).strip().lower() in ["sim", "true", "1", "ativo"]
+    classif_str = (
+        "Não Recomendado (Sinal Vermelho Ativado)"
+        if sinal_v else sanitizar(classificacao or "Avaliado")
+    )
+    classif_str = classif_str.replace(
+        "Aderência entre 65% a 79%",
+        "Aderência entre 65% e 79%",
+    )
 
     # Identificação
     pdf.set_fill_color(248, 250, 252)
@@ -124,11 +131,11 @@ def gerar_laudo_fase3_pdf(
     pdf.set_font("helvetica", "B", 7.5)
     pdf.cell(28, 5.5, " CARGO / NÍVEL:", 1, 0, "L", True)
     pdf.set_font("helvetica", "", 7.5)
-    pdf.cell(102, 5.5, f" {vaga_c.upper()} ({nivel_c.upper()})", 1, 0, "L")
+    pdf.cell(82, 5.5, f" {vaga_c.upper()} ({nivel_c.upper()})", 1, 0, "L")
     pdf.set_font("helvetica", "B", 7.5)
-    pdf.cell(30, 5.5, " ARQUÉTIPO:", 1, 0, "L", True)
+    pdf.cell(27, 5.5, " ARQUÉTIPO:", 1, 0, "L", True)
     pdf.set_font("helvetica", "", 7.5)
-    pdf.cell(30, 5.5, f" {arq_c[:20]}", 1, 1, "C")
+    pdf.cell(53, 5.5, f" {arq_c}", 1, 1, "L")
     pdf.ln(3)
 
     # 1. Sumário Executivo de Aderência
