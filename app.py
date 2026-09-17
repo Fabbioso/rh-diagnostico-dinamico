@@ -184,14 +184,63 @@ def extrair_secao_competencia(texto_ia, pos_num, nome_comp):
             
     return texto_ia
 
-def extrair_sintese_competencia(texto_ia, pos_num, nome_comp):
+def extrair_descricao_competencia(texto_ia, pos_num, nome_comp):
+    desc_central = ""
+    desc_negativa = ""
+    desc_positiva = ""
+    resumo = ""
+
+    if not texto_ia:
+        return {
+            "central": desc_central,
+            "negativa": desc_negativa,
+            "positiva": desc_positiva,
+            "resumo": resumo,
+        }
+
     trecho_comp = extrair_secao_competencia(texto_ia, pos_num, nome_comp)
-    if trecho_comp:
-        match_sintese = re.search(r"[-*•]?\s*(?:RESUMO\s*DA\s*LEITURA|Resumo\s*da\s*Leitura|S[ií]ntese\s*T[ée]cnica)\s*:\s*(.*?)(?=\n[-*•]|\n\n|$)", trecho_comp, re.DOTALL | re.IGNORECASE)
-        if match_sintese:
-            sintese = match_sintese.group(1).strip().replace("\n", " ")
-            if len(sintese) > 5:
-                return sintese
+    if not trecho_comp:
+        return {
+            "central": desc_central,
+            "negativa": desc_negativa,
+            "positiva": desc_positiva,
+            "resumo": resumo,
+        }
+
+    padroes = [
+        ("central", r"(?is)(?:^|\n)\s*(?:[-*•]|\*\*)?\s*(?:\d+\.\s*)?(?:\*\*)?\s*CARTA\s*CENTRAL\s*(?:\*\*)?\s*:\s*(.*?)(?=(?:\n\s*(?:[-*•]|\*\*)?\s*(?:\d+\.\s*)?(?:\*\*)?\s*(?:CARTA\s*NEGATIVA|CARTA\s*POSITIVA|RESUMO\s*DA\s*LEITURA)\s*(?:\*\*)?\s*:)|$))"),
+        ("negativa", r"(?is)(?:^|\n)\s*(?:[-*•]|\*\*)?\s*(?:\d+\.\s*)?(?:\*\*)?\s*CARTA\s*NEGATIVA\s*(?:\*\*)?\s*:\s*(.*?)(?=(?:\n\s*(?:[-*•]|\*\*)?\s*(?:\d+\.\s*)?(?:\*\*)?\s*(?:CARTA\s*POSITIVA|RESUMO\s*DA\s*LEITURA)\s*(?:\*\*)?\s*:)|$))"),
+        ("positiva", r"(?is)(?:^|\n)\s*(?:[-*•]|\*\*)?\s*(?:\d+\.\s*)?(?:\*\*)?\s*CARTA\s*POSITIVA\s*(?:\*\*)?\s*:\s*(.*?)(?=(?:\n\s*(?:[-*•]|\*\*)?\s*(?:\d+\.\s*)?(?:\*\*)?\s*(?:RESUMO\s*DA\s*LEITURA|S[ií]ntese\s*T[ée]cnica)\s*(?:\*\*)?\s*:)|$))"),
+        ("resumo", r"(?is)(?:^|\n)\s*(?:[-*•]|\*\*)?\s*(?:\d+\.\s*)?(?:\*\*)?\s*(?:RESUMO\s*DA\s*LEITURA|S[ií]ntese\s*T[ée]cnica)\s*(?:\*\*)?\s*:\s*(.*?)(?=(?:\n\s*(?:[-*•]|\*\*)?\s*(?:\d+\.\s*)?(?:\*\*)?\s*(?:CONCLUS[ÃA]O|\d+\.\s*[A-ZÀ-ÖØ-Ý])|$))")
+    ]
+
+    for nome_chave, regex_padrao in padroes:
+        match = re.search(regex_padrao, trecho_comp)
+        valor = match.group(1).strip().replace("\n", " ") if match else ""
+        valor = re.sub(r"^\s*[:\-–—]+\s*", "", valor).strip()
+        if valor:
+            if nome_chave == "central":
+                desc_central = valor
+            elif nome_chave == "negativa":
+                desc_negativa = valor
+            elif nome_chave == "positiva":
+                desc_positiva = valor
+            elif nome_chave == "resumo":
+                resumo = valor
+
+    return {
+        "central": desc_central,
+        "negativa": desc_negativa,
+        "positiva": desc_positiva,
+        "resumo": resumo,
+    }
+
+
+def extrair_sintese_competencia(texto_ia, pos_num, nome_comp):
+    dados = extrair_descricao_competencia(texto_ia, pos_num, nome_comp)
+    sintese = dados.get("resumo", "").strip()
+    if len(sintese) > 5:
+        return sintese
     return "Avaliação metodológica integrada dos arcanos alinhada à competência."
 
 def obter_ou_gerar_analise_ia(c_nome, c_vaga, arq_ativo):
@@ -716,6 +765,11 @@ with tab1:
             return h_ocupada + 1.2
 
         for i in range(1, 9):
+            desc_central = ""
+            desc_negativa = ""
+            desc_positiva = ""
+            resumo = ""
+
             nota_comp = st.session_state.get(f"t_pontos_{i}", 3)
             c_cent = st.session_state.get(f"t_central_{i}", "-")
             c_neg = st.session_state.get(f"t_negativa_{i}", "-")
@@ -724,31 +778,24 @@ with tab1:
             cartas_str = f"Carta Central: {c_cent}  |  Carta Negativa: {c_neg}  |  Carta Positiva: {c_pos}"
             conteudo_comp = extrair_secao_competencia(texto_ia_doc, i, competencias_nomes[i-1])
 
-            def extrair_texto_puro(padrao_regex, texto_fonte, carta_alvo=""):
-                m = re.search(padrao_regex, texto_fonte, re.DOTALL | re.IGNORECASE)
-                if not m:
-                    return ""
-                t = m.group(1).strip().replace("\n", " ")
-                if carta_alvo and t.lower().startswith(carta_alvo.lower()):
-                    t = t[len(carta_alvo):].strip()
-                t = re.sub(r"^(?:[:\-–—]\s*)+", "", t).strip()
-                return t
-
-            padroes = [
-                ("CARTA CENTRAL", c_cent, r"[-*•]?\s*(?:CARTA\s*CENTRAL|Carta\s*Central)\s*:\s*(.*?)(?=\n[-*•]?\s*(?:CARTA\s*NEGATIVA|Carta\s*Negativa)|\n\n|$)"),
-                ("CARTA NEGATIVA", c_neg, r"[-*•]?\s*(?:CARTA\s*NEGATIVA|Carta\s*Negativa)\s*:\s*(.*?)(?=\n[-*•]?\s*(?:CARTA\s*POSITIVA|Carta\s*Positiva)|\n\n|$)"),
-                ("CARTA POSITIVA", c_pos, r"[-*•]?\s*(?:CARTA\s*POSITIVA|Carta\s*Positiva)\s*:\s*(.*?)(?=\n[-*•]?\s*(?:RESUMO\s*DA\s*LEITURA|Resumo\s*da\s*Leitura|S[ií]ntese\s*T[ée]cnica)|\n\n|$)"),
-                ("RESUMO DA LEITURA", "", r"[-*•]?\s*(?:RESUMO\s*DA\s*LEITURA|Resumo\s*da\s*Leitura|S[ií]ntese\s*T[ée]cnica)\s*:\s*(.*?)(?=\n\n|$)")
-            ]
+            dados_competencia = extrair_descricao_competencia(texto_ia_doc, i, competencias_nomes[i-1])
+            desc_central = dados_competencia.get("central", "")
+            desc_negativa = dados_competencia.get("negativa", "")
+            desc_positiva = dados_competencia.get("positiva", "")
+            resumo = dados_competencia.get("resumo", "")
 
             blocos_parsed = []
-            for rotulo_nome, carta_nome_val, regex_pat in padroes:
-                t_corpo = extrair_texto_puro(regex_pat, conteudo_comp, carta_nome_val)
-                if len(t_corpo) > 2:
-                    blocos_parsed.append((rotulo_nome, carta_nome_val, t_corpo))
+            if desc_central:
+                blocos_parsed.append(("CARTA CENTRAL", c_cent, desc_central))
+            if desc_negativa:
+                blocos_parsed.append(("CARTA NEGATIVA", c_neg, desc_negativa))
+            if desc_positiva:
+                blocos_parsed.append(("CARTA POSITIVA", c_pos, desc_positiva))
+            if resumo:
+                blocos_parsed.append(("RESUMO DA LEITURA", "", resumo))
 
             if not blocos_parsed:
-                blocos_parsed = [("", "", conteudo_comp)]
+                blocos_parsed = [("", "", "Competência sem descrição disponível no laudo gerado.")]
 
             pdf.set_font("helvetica", "", 7.5)
             h_corpo_total = 0.0
@@ -1163,15 +1210,30 @@ with tab3:
             ]
             dados_tabela_f1 = []
             for idx_c in range(1, 9):
+                desc_central = ""
+                desc_negativa = ""
+                desc_positiva = ""
+                resumo = ""
+
                 c_cent_v = st.session_state.get(f"t_central_{idx_c}", "-")
                 c_neg_v = st.session_state.get(f"t_negativa_{idx_c}", "-")
                 c_pos_v = st.session_state.get(f"t_positiva_{idx_c}", "-")
+
+                dados_competencia = extrair_descricao_competencia(texto_ia_laudo, idx_c, competencias_nomes[idx_c - 1])
+                desc_central = dados_competencia.get("central", "")
+                desc_negativa = dados_competencia.get("negativa", "")
+                desc_positiva = dados_competencia.get("positiva", "")
+                resumo = dados_competencia.get("resumo", "")
+
+                if not resumo:
+                    resumo = extrair_sintese_competencia(texto_ia_laudo, idx_c, competencias_nomes[idx_c - 1])
+
                 dados_tabela_f1.append({
                     "pos": idx_c,
                     "nome": competencias_nomes[idx_c - 1],
                     "cartas": f"Central: {c_cent_v}\nNegativa: {c_neg_v}\nPositiva: {c_pos_v}",
                     "nota": st.session_state.get(f"t_pontos_{idx_c}", 3),
-                    "resumo": extrair_sintese_competencia(texto_ia_laudo, idx_c, competencias_nomes[idx_c - 1])
+                    "resumo": resumo or "Resumo da competência não disponível."
                 })
 
   # Geração do Dossiê Master Unificado

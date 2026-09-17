@@ -1,5 +1,6 @@
 import os
 import math
+import re
 from datetime import datetime
 from fpdf import FPDF
 
@@ -30,6 +31,15 @@ def sanitizar(texto):
     for orig, dest in subs.items():
         txt = txt.replace(orig, dest)
     return txt.encode("latin-1", "replace").decode("latin-1")
+
+def formatar_cuspide(grau):
+    valor = str(grau or "").strip().replace("º", "°").replace("’", "'").replace("′", "'")
+    match = re.fullmatch(r"(\d{1,2})\s*°?\s*(\d{1,2})?\s*'?", valor)
+    if not match:
+        return "0° 0'"
+    graus = int(match.group(1))
+    minutos = int(match.group(2) or 0)
+    return f"{graus}° {minutos}'"
 
 class DossieExecutivoMasterPDF(FPDF):
     def header(self):
@@ -66,9 +76,9 @@ def desenhar_card(pdf, x, y, w, h, titulo, valor, subtitulo, cor_bg, cor_txt):
     pdf.cell(w, 5.5, sanitizar(valor), 0, 0, "C")
     
     pdf.set_xy(x, y + 12)
-    pdf.set_font("helvetica", "I", 6.5)
+    pdf.set_font("helvetica", "I", 5.8)
     pdf.set_text_color(100, 116, 139)
-    pdf.cell(w, 3.5, sanitizar(subtitulo), 0, 0, "C")
+    pdf.multi_cell(w, 3.0, sanitizar(subtitulo), 0, "C")
 
 def gerar_laudo_fase3_pdf(
     c_nome, c_vaga, c_nivel, arq_ativo_ficha,
@@ -127,14 +137,14 @@ def gerar_laudo_fase3_pdf(
     
     y_cards = pdf.get_y()
     card_w = 61.3
-    card_h = 16.5
+    card_h = 19.5
 
     desenhar_card(pdf, 10, y_cards, card_w, card_h, "FASE 1: TAROT COMPORTAMENTAL", f"{p1:.1f}%", "Peso Aplicado: 70%", (241, 245, 249), (30, 41, 59))
     desenhar_card(pdf, 10 + card_w + 3, y_cards, card_w, card_h, "FASE 2: ESTRUTURAL & TRÂNSITOS", f"{p2:.1f}%", "Peso Aplicado: 30%", (241, 245, 249), (30, 41, 59))
     
     cor_bg_ig = (254, 242, 242) if sinal_v else (240, 253, 244)
     cor_tx_ig = (185, 28, 28) if sinal_v else (21, 128, 61)
-    desenhar_card(pdf, 10 + (card_w * 2) + 6, y_cards, card_w, card_h, "ÍNDICE GLOBAL INTEGRADO", f"{ig:.1f}%", classif_str[:32], cor_bg_ig, cor_tx_ig)
+    desenhar_card(pdf, 10 + (card_w * 2) + 6, y_cards, card_w, card_h, "ÍNDICE GLOBAL INTEGRADO", f"{ig:.1f}%", classif_str, cor_bg_ig, cor_tx_ig)
 
     pdf.set_xy(10, y_cards + card_h + 2)
     if sinal_v:
@@ -264,7 +274,7 @@ def gerar_laudo_fase3_pdf(
         
         signo_base = d_val.get('signo', 'Estável')
         grau_base = d_val.get('grau', '')
-        signo_str = f"{signo_base} ({grau_base})" if grau_base else signo_base
+        signo_str = f"{sanitizar(signo_base)} ({formatar_cuspide(grau_base)})"
         
         nota_val = d_val.get('nota_base', d_val.get('nota', 4.0))
         peso_val = d_val.get('peso', 1.0)
