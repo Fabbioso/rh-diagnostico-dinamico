@@ -33,13 +33,14 @@ def sanitizar(texto):
     return txt.encode("latin-1", "replace").decode("latin-1")
 
 def formatar_cuspide(grau):
-    valor = str(grau or "").strip().replace("º", "°").replace("’", "'").replace("′", "'")
-    match = re.fullmatch(r"(\d{1,2})\s*°?\s*(\d{1,2})?\s*'?", valor)
-    if not match:
+    if not grau:
         return "0° 0'"
-    graus = int(match.group(1))
-    minutos = int(match.group(2) or 0)
-    return f"{graus}° {minutos}'"
+    numeros = re.findall(r"\d+", str(grau))
+    if len(numeros) >= 2:
+        return f"{numeros[0]}° {numeros[1]}'"
+    if len(numeros) == 1:
+        return f"{numeros[0]}° 0'"
+    return str(grau)
 
 class DossieExecutivoMasterPDF(FPDF):
     def header(self):

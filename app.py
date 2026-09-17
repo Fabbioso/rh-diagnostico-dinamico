@@ -175,65 +175,85 @@ def extrair_secao_competencia(texto_ia, pos_num, nome_comp):
     reg_proximos = "|".join(proximos_marcadores)
     
     for padrao in padroes_secao:
-        match = re.search(rf"{padrao}(.*?)(?={reg_proximos}|$)", texto_ia, re.DOTALL | re.IGNORECASE | re.MULTILINE)
+        match = re.search(rf"{padrao}(.*?)(?={reg_proximos}|\Z)", texto_ia, re.DOTALL | re.IGNORECASE | re.MULTILINE)
         if match and len(match.group(1).strip()) > 15:
             trecho = match.group(1).strip()
             trecho = re.sub(r"^\s*\(Nota:\s*\d+/\d+\)\s*", "", trecho, flags=re.IGNORECASE)
             trecho = re.sub(r"\n\s*---\s*", "\n", trecho)
             return trecho
             
-    return texto_ia
+    return ""
 
 def extrair_descricao_competencia(texto_ia, pos_num, nome_comp):
-    desc_central = ""
-    desc_negativa = ""
-    desc_positiva = ""
-    resumo = ""
+    resultado_vazio = {
+        "central": "",
+        "negativa": "",
+        "positiva": "",
+        "resumo": "",
+    }
 
     if not texto_ia:
-        return {
-            "central": desc_central,
-            "negativa": desc_negativa,
-            "positiva": desc_positiva,
-            "resumo": resumo,
-        }
+        return resultado_vazio
 
     trecho_comp = extrair_secao_competencia(texto_ia, pos_num, nome_comp)
     if not trecho_comp:
-        return {
-            "central": desc_central,
-            "negativa": desc_negativa,
-            "positiva": desc_positiva,
-            "resumo": resumo,
-        }
+        return resultado_vazio
 
-    padroes = [
-        ("central", r"(?is)(?:^|\n)\s*(?:[-*•]|\*\*)?\s*(?:\d+\.\s*)?(?:\*\*)?\s*CARTA\s*CENTRAL\s*(?:\*\*)?\s*:\s*(.*?)(?=(?:\n\s*(?:[-*•]|\*\*)?\s*(?:\d+\.\s*)?(?:\*\*)?\s*(?:CARTA\s*NEGATIVA|CARTA\s*POSITIVA|RESUMO\s*DA\s*LEITURA)\s*(?:\*\*)?\s*:)|$))"),
-        ("negativa", r"(?is)(?:^|\n)\s*(?:[-*•]|\*\*)?\s*(?:\d+\.\s*)?(?:\*\*)?\s*CARTA\s*NEGATIVA\s*(?:\*\*)?\s*:\s*(.*?)(?=(?:\n\s*(?:[-*•]|\*\*)?\s*(?:\d+\.\s*)?(?:\*\*)?\s*(?:CARTA\s*POSITIVA|RESUMO\s*DA\s*LEITURA)\s*(?:\*\*)?\s*:)|$))"),
-        ("positiva", r"(?is)(?:^|\n)\s*(?:[-*•]|\*\*)?\s*(?:\d+\.\s*)?(?:\*\*)?\s*CARTA\s*POSITIVA\s*(?:\*\*)?\s*:\s*(.*?)(?=(?:\n\s*(?:[-*•]|\*\*)?\s*(?:\d+\.\s*)?(?:\*\*)?\s*(?:RESUMO\s*DA\s*LEITURA|S[ií]ntese\s*T[ée]cnica)\s*(?:\*\*)?\s*:)|$))"),
-        ("resumo", r"(?is)(?:^|\n)\s*(?:[-*•]|\*\*)?\s*(?:\d+\.\s*)?(?:\*\*)?\s*(?:RESUMO\s*DA\s*LEITURA|S[ií]ntese\s*T[ée]cnica)\s*(?:\*\*)?\s*:\s*(.*?)(?=(?:\n\s*(?:[-*•]|\*\*)?\s*(?:\d+\.\s*)?(?:\*\*)?\s*(?:CONCLUS[ÃA]O|\d+\.\s*[A-ZÀ-ÖØ-Ý])|$))")
-    ]
+    def escapar_rotulo(rotulo):
+        return re.escape(rotulo).replace(r"\ ", r"\s*")
 
+    prefixo = r"(?:^|\n)\s*(?:[-*•]\s*|\*\*\s*)?(?:\d+\.\s*)?(?:\*\*)?\s*"
+    rotulos = {
+        "central": escapar_rotulo("CARTA CENTRAL"),
+        "negativa": escapar_rotulo("CARTA NEGATIVA"),
+        "positiva": escapar_rotulo("CARTA POSITIVA"),
+        "resumo": r"(?:RESUMO\s*DA\s*LEITURA|S[ií]ntese\s*T[ée]cnica)",
+    }
+    proximos_campos = "|".join(rotulos.values())
+    limite_cabecalho = (
+        rf"(?:#{{1,6}}\s*|\d+\.\s+[^\n]+|[-*•]\s*(?:{proximos_campos}))"
+    )
+    padroes = []
+    for nome_chave, rotulo in rotulos.items():
+        if nome_chave == "resumo":
+            limite = rf"(?=\n\s*{limite_cabecalho}|\n\s*\n|$)"
+        else:
+            limite = (
+                rf"(?=\n\s*(?:[-*•]\s*|\*\*\s*)?(?:\d+\.\s*)?"
+                rf"(?:\*\*)?\s*(?:{proximos_campos})\s*(?:\*\*)?\s*:|$)"
+            )
+        regex_padrao = (
+            rf"(?is){prefixo}{rotulo}\s*(?:\*\*)?\s*:\s*(.*?)"
+            rf"{limite}"
+        )
+        padroes.append((nome_chave, regex_padrao))
+
+    resultado = resultado_vazio.copy()
     for nome_chave, regex_padrao in padroes:
-        match = re.search(regex_padrao, trecho_comp)
+        try:
+            match = re.search(regex_padrao, trecho_comp)
+        except re.error:
+            return resultado_vazio
         valor = match.group(1).strip().replace("\n", " ") if match else ""
         valor = re.sub(r"^\s*[:\-–—]+\s*", "", valor).strip()
         if valor:
-            if nome_chave == "central":
-                desc_central = valor
-            elif nome_chave == "negativa":
-                desc_negativa = valor
-            elif nome_chave == "positiva":
-                desc_positiva = valor
-            elif nome_chave == "resumo":
-                resumo = valor
+            resultado[nome_chave] = valor
 
-    return {
-        "central": desc_central,
-        "negativa": desc_negativa,
-        "positiva": desc_positiva,
-        "resumo": resumo,
-    }
+    return resultado
+
+
+def remover_nome_carta_descricao(descricao, nome_carta):
+    descricao = str(descricao or "").strip()
+    nome_carta = str(nome_carta or "").strip()
+    if not descricao or not nome_carta:
+        return descricao
+    return re.sub(
+        rf"^{re.escape(nome_carta)}(?:(?:\s*[:\-–—]\s*)|\s+)",
+        "",
+        descricao,
+        count=1,
+        flags=re.IGNORECASE,
+    ).strip()
 
 
 def extrair_sintese_competencia(texto_ia, pos_num, nome_comp):
@@ -779,9 +799,9 @@ with tab1:
             conteudo_comp = extrair_secao_competencia(texto_ia_doc, i, competencias_nomes[i-1])
 
             dados_competencia = extrair_descricao_competencia(texto_ia_doc, i, competencias_nomes[i-1])
-            desc_central = dados_competencia.get("central", "")
-            desc_negativa = dados_competencia.get("negativa", "")
-            desc_positiva = dados_competencia.get("positiva", "")
+            desc_central = remover_nome_carta_descricao(dados_competencia.get("central", ""), c_cent)
+            desc_negativa = remover_nome_carta_descricao(dados_competencia.get("negativa", ""), c_neg)
+            desc_positiva = remover_nome_carta_descricao(dados_competencia.get("positiva", ""), c_pos)
             resumo = dados_competencia.get("resumo", "")
 
             blocos_parsed = []
@@ -1220,9 +1240,9 @@ with tab3:
                 c_pos_v = st.session_state.get(f"t_positiva_{idx_c}", "-")
 
                 dados_competencia = extrair_descricao_competencia(texto_ia_laudo, idx_c, competencias_nomes[idx_c - 1])
-                desc_central = dados_competencia.get("central", "")
-                desc_negativa = dados_competencia.get("negativa", "")
-                desc_positiva = dados_competencia.get("positiva", "")
+                desc_central = remover_nome_carta_descricao(dados_competencia.get("central", ""), c_cent_v)
+                desc_negativa = remover_nome_carta_descricao(dados_competencia.get("negativa", ""), c_neg_v)
+                desc_positiva = remover_nome_carta_descricao(dados_competencia.get("positiva", ""), c_pos_v)
                 resumo = dados_competencia.get("resumo", "")
 
                 if not resumo:
