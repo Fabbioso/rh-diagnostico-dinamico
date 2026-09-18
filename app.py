@@ -12,12 +12,13 @@ import plotly.graph_objects as go
 import pytz
 import streamlit as st
 import os
-from gerar_pdf import gerar_pdf_profissional
-from gerar_pdf_fase2 import gerar_laudo_fase2_pdf
 import importlib
-import gerar_pdf_fase3
-importlib.reload(gerar_pdf_fase3)
-from gerar_pdf_fase3 import gerar_laudo_fase3_pdf
+import reports.gerar_pdf_fase3
+from reports.gerar_pdf import gerar_pdf_profissional
+from reports.gerar_pdf_fase2 import gerar_laudo_fase2_pdf
+from reports.gerar_pdf_fase3 import gerar_laudo_fase3_pdf
+
+importlib.reload(reports.gerar_pdf_fase3)
 from core.constants import (
     PESO_FASE_1,
     PESO_FASE_2,
