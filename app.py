@@ -18,7 +18,14 @@ import importlib
 import gerar_pdf_fase3
 importlib.reload(gerar_pdf_fase3)
 from gerar_pdf_fase3 import gerar_laudo_fase3_pdf
-
+from core.constants import (
+    PESO_FASE_1,
+    PESO_FASE_2,
+    NOTA_CRITICA_SINAL_VERMELHO,
+    CASAS_CRITICAS_GOVERNANCA,
+    FAIXAS_DELIBERACAO,
+    COMPETENCIAS_FASE_1,
+)
 # Configuração inicial da página
 st.set_page_config(
     page_title="Sistema de Diagnóstico Corporativo Dinâmico - RH", layout="wide"
