@@ -271,15 +271,20 @@ def extrair_sintese_competencia(texto_ia, pos_num, nome_comp):
         return sintese
     return "Avaliação metodológica integrada dos arcanos alinhada à competência."
 
-def obter_ou_gerar_analise_ia(c_nome, c_vaga, arq_ativo):
-    cache_key = f"ai_analise_{c_nome}_{c_vaga}"
+def chave_analise_ia(c_nome, c_vaga):
+    return f"ai_analise_v3_{c_nome}_{c_vaga}"
+
+
+def obter_ou_gerar_analise_ia(c_nome, c_vaga, arq_ativo, sinal_vermelho=None):
+    # Incremento de versão no cache para descartar pareceres antigos gravados em sessão
+    cache_key = chave_analise_ia(c_nome, c_vaga)
     if cache_key in st.session_state:
         return st.session_state[cache_key]
-    
+
     dados_casas = {}
     competencias_nomes = [
-        "Hard Skills", "Soft Skills", "Fit Cultural", 
-        "Desafios", "Potencial Futuro", "Equilíbrio Emocional", 
+        "Hard Skills", "Soft Skills", "Fit Cultural",
+        "Desafios", "Potencial Futuro", "Equilíbrio Emocional",
         "Saúde Psicológica", "Confiabilidade e Ética"
     ]
     for i in range(1, 9):
@@ -291,32 +296,54 @@ def obter_ou_gerar_analise_ia(c_nome, c_vaga, arq_ativo):
             "nota": st.session_state.get(f"t_pontos_{i}", 3)
         }
 
+    # Validação mandatória de veto corporativo (Sinal Vermelho)
+    is_sinal_v = (sinal_vermelho in ["Sim", True]) or any(
+        dados_casas[i]["nota"] <= 2 for i in [6, 7, 8]
+    )
+
     if GEMINI_API_DISPONIVEL:
         try:
             prompt_usuario = f"""
-            Gere a Análise do Jogo detalhada e o Parecer Final para o seguinte processo seletivo:
-            - Candidato(a): {c_nome or 'Candidato'}
-            - Vaga/Cargo: {c_vaga or 'Geral'}
-            - Arquétipo Organizacional Ativo: {arq_ativo}
+Gere a Análise do Jogo detalhada e o Parecer Final para o seguinte processo seletivo:
+- Candidato(a): {c_nome or 'Candidato'}
+- Vaga/Cargo: {c_vaga or 'Geral'}
+- Arquétipo Organizacional Ativo: {arq_ativo}
 
-            Cartas sorteadas e notas por competência nas 8 posições:
-            """
+Cartas sorteadas e notas por competência nas 8 posições:
+"""
             for num, d in dados_casas.items():
                 prompt_usuario += f"\n- Casa {num} ({d['titulo']} - Nota {d['nota']}/5): Carta Central: {d['central']} | Carta Negativa: {d['negativa']} | Carta Positiva: {d['positiva']}"
-            
+
+            # Diretriz imperativa de deliberação
+            if is_sinal_v:
+                diretriz_governanca = """
+DIRETRIZ MANDATÓRIA DE GOVERNANÇA CORPORATIVA (### CONCLUSÃO):
+- SINAL VERMELHO ATIVADO: Detectado risco crítico em bases estruturais (Casas 6, 7 ou 8: Equilíbrio Emocional, Saúde Psicológica ou Confiabilidade/Ética).
+- Na '### CONCLUSÃO', você DEVE OBRIGATORIAMENTE deliberar como: "Não Recomendado (Sinal Vermelho Ativado)".
+- É TERMINANTEMENTE PROIBIDO emitir parecer "Recomendado" ou "Recomendado com Ressalvas", mesmo que o candidato possua notas altas em outras competências.
+- Justifique o veto enfatizando que os riscos emocionais, psíquicos ou éticos representam um ponto de ruptura inaceitável para a governança da posição.
+"""
+            else:
+                diretriz_governanca = """
+DIRETRIZ DE GOVERNANÇA CORPORATIVA (### CONCLUSÃO):
+- SINAL VERMELHO DESATIVADO: Bases estruturais preservadas.
+- Delibere com equilíbrio com base na aderência do perfil ao arquétipo, enquadrando como "Recomendado" ou "Recomendado com Ressalvas" conforme as lacunas identificadas.
+"""
+
+            prompt_usuario += f"\n{diretriz_governanca}"
             prompt_usuario += "\n\nEstruture a resposta com cabeçalhos '### 1. Hard Skills', etc., incluindo explicitamente os itens 'CARTA CENTRAL: [Nome da Carta] - [Texto]', 'CARTA NEGATIVA: [Nome da Carta] - [Texto]', 'CARTA POSITIVA: [Nome da Carta] - [Texto]' e 'RESUMO DA LEITURA: [Texto]', finalizando com '### CONCLUSÃO'. Não inclua linhas tracejadas (---)."
 
             response = gemini_client.models.generate_content(
-                model="gemini-3.8-flash",
+                model="gemini-3.6-flash",
                 contents=prompt_usuario,
                 config=genai.types.GenerateContentConfig(
                     system_instruction=SYSTEM_PROMPT_RH,
-                    temperature=0.4,
+                    temperature=0.3,
                     max_output_tokens=8192,
                 ),
             )
             texto_gerado = response.text
-            
+
             tokens_in = getattr(response.usage_metadata, "prompt_token_count", 0)
             tokens_out = getattr(response.usage_metadata, "candidates_token_count", 0)
             custo_usd = (tokens_in * PRECO_ENTRADA_PER_TOKEN_USD) + (tokens_out * PRECO_SAIDA_PER_TOKEN_USD)
@@ -620,9 +647,9 @@ with tab1:
     st.markdown("---")
     st.info(f"📊 **Resultado Individual da Fase 1 (Tarot):** {total_t1} / 40 pontos ({perc_t1:.1f}% de aderência comportamental)")
 
-    c_nome_val = nome_candidato if 'nome_candidato' in locals() else st.session_state.get("input_nome_cand", "")
-    cache_key_check = f"ai_analise_{c_nome_val}_{vaga_cargo}"
-    
+    c_nome_val = st.session_state.get("nome_candidato") or st.session_state.get("input_nome_cand", "") or (nome_candidato if 'nome_candidato' in locals() else "")
+    cache_key_check = f"ai_analise_v3_{c_nome_val}_{vaga_cargo}"
+
     if st.button("🤖 Gerar Análise Qualitativa por IA (Fase 1)"):
         with st.spinner("Consultando o Gemini 3.8 Flash para gerar o parecer completo das 8 casas..."):
             obter_ou_gerar_analise_ia(c_nome_val, vaga_cargo, arq_nome)
@@ -637,6 +664,11 @@ with tab1:
         )
 
     def gerar_ficha_pdf_fase1(c_nome, c_vaga, total_pts, classif, sinal_vermelho_val):
+        cache_key_pdf = chave_analise_ia(c_nome, c_vaga)
+        texto_ia_doc = st.session_state.get(cache_key_pdf)
+        if not texto_ia_doc:
+            texto_ia_doc = obter_ou_gerar_analise_ia(c_nome, c_vaga, arq_nome)
+
         pdf = FPDF()
         pdf.add_page()
         pdf.set_auto_page_break(auto=False)
@@ -673,7 +705,6 @@ with tab1:
             "Saúde Psicológica", "Confiabilidade e Ética"
         ]
 
-        texto_ia_doc = obter_ou_gerar_analise_ia(c_nome, c_vaga, arq_nome)
         cursor_y = pdf.get_y()
 
         for i in range(1, 9):
@@ -905,7 +936,7 @@ with tab1:
         res = pdf.output(dest="S")
         return res.encode("latin1") if isinstance(res, str) else bytes(res)
 
-    if cache_key_check in st.session_state:
+    if cache_key_check in st.session_state and st.session_state.get(cache_key_check):
         pdf_stream = gerar_ficha_pdf_fase1(c_nome_val, vaga_cargo, total_t1, classificacao_f1, sinal_vermelho_f1)
         st.download_button(
             label="📥 Baixar Ficha de Avaliação Completa em PDF",
@@ -1214,7 +1245,7 @@ with tab3:
             st.markdown("### Parecer Técnico Dinâmico & Conjuntural")
             st.write(f"Avaliação direcionada ao arquétipo **{arq_ativo_ficha}** para a posição de **{c_vaga}**. O cruzamento integra a análise comportamental e o ciclo conjuntural ativo de trânsitos, resultando em um **Índice Global de {indice_global:.1f}%** (*{classificacao}*).")
 
-            texto_ia_laudo = obter_ou_gerar_analise_ia(c_nome, c_vaga, arq_ativo_ficha)
+            texto_ia_laudo = obter_ou_gerar_analise_ia(c_nome, c_vaga, arq_ativo_ficha, sinal_vermelho=sinal_vermelho)
             match_conclusao_laudo = re.search(
                 r"^(?:\s*(?:#{1,6}|\*\*)?\s*(?:\d+\.\s*)?(?:\*\*)?\s*CONCLUS[ÃA]O\s*(?:\*\*)?\s*:?(?:\s|$))(.*)$",
                 texto_ia_laudo,
