@@ -131,11 +131,14 @@ def gerar_laudo_fase3_pdf(
     pdf.set_font("helvetica", "B", 7.5)
     pdf.cell(28, 5.5, " CARGO / NÍVEL:", 1, 0, "L", True)
     pdf.set_font("helvetica", "", 7.5)
-    pdf.cell(82, 5.5, f" {vaga_c.upper()} ({nivel_c.upper()})", 1, 0, "L")
+    pdf.cell(72, 5.5, f" {vaga_c.upper()} ({nivel_c.upper()})", 1, 0, "L")
     pdf.set_font("helvetica", "B", 7.5)
     pdf.cell(27, 5.5, " ARQUÉTIPO:", 1, 0, "L", True)
-    pdf.set_font("helvetica", "", 7.5)
-    pdf.cell(53, 5.5, f" {arq_c}", 1, 1, "L")
+    
+    # Reduz dinamicamente a fonte se o arquétipo for longo, evitando corte
+    tam_fonte_arq = 6.5 if len(str(arq_c)) > 26 else 7.5
+    pdf.set_font("helvetica", "", tam_fonte_arq)
+    pdf.cell(63, 5.5, f" {arq_c}", 1, 1, "L")
     pdf.ln(3)
 
     # 1. Sumário Executivo de Aderência
@@ -304,20 +307,38 @@ def gerar_laudo_fase3_pdf(
             clima_formatado = "Estável"
             diag_txt = f"{escopo_casa} operando em estabilidade funcional."
 
-        # Linhas do diagnóstico
-        pdf.set_font("helvetica", "", 6.5)
-        palavras_d = diag_txt.split()
-        linhas_d = 1
-        linha_at = ""
-        for p in palavras_d:
-            teste = f"{linha_at} {p}".strip()
-            if pdf.get_string_width(teste) <= 70:
-                linha_at = teste
-            else:
-                linhas_d += 1
-                linha_at = p
+# Função auxiliar de quebra exata respeitando as margens internas do multi_cell
+        def estimar_linhas(texto, larg_col, tam_fonte=6.5, estilo=""):
+            pdf.set_font("helvetica", estilo, tam_fonte)
+            larg_util = max(1.0, float(larg_col) - 4.0)
+            cont = 0
+            for pedaco in str(texto).split("\n"):
+                palavras = pedaco.split()
+                if not palavras:
+                    cont += 1
+                    continue
+                linha_tmp = ""
+                for p in palavras:
+                    teste = f"{linha_tmp} {p}".strip()
+                    if pdf.get_string_width(teste) <= larg_util:
+                        linha_tmp = teste
+                    else:
+                        cont += 1
+                        linha_tmp = p
+                if linha_tmp:
+                    cont += 1
+            return max(1, cont)
 
-        row_h2 = max(8.0, (linhas_d * 3.4) + 2.0)
+        esta_ativ = any(p in clima_formatado for p in ["Júpiter", "Saturno", "Urano"])
+        estilo_clima = "B" if esta_ativ else ""
+
+        # Cálculo proporcional da altura considerando Signo, Clima e Diagnóstico
+        l_signo = estimar_linhas(signo_str, 32, 6.5, "")
+        l_clima = estimar_linhas(clima_formatado, 48, 6.5, estilo_clima)
+        l_diag = estimar_linhas(diag_txt, 72, 6.5, "")
+
+        max_l = max(l_signo, l_clima, l_diag, 1)
+        row_h2 = max(7.5, float(max_l * 3.2) + 2.2)
         y_l2 = pdf.get_y()
 
         # CASA
@@ -328,7 +349,7 @@ def gerar_laudo_fase3_pdf(
 
         # SIGNO
         pdf.rect(20, y_l2, 32, row_h2)
-        pdf.set_xy(21, y_l2 + 1.2)
+        pdf.set_xy(21, y_l2 + 1.1)
         pdf.set_font("helvetica", "", 6.5)
         pdf.multi_cell(30, 3.2, sanitizar(signo_str), 0, "L")
 
@@ -346,17 +367,17 @@ def gerar_laudo_fase3_pdf(
 
         # CLIMA
         pdf.rect(80, y_l2, 48, row_h2)
-        pdf.set_xy(81, y_l2 + 1.2)
-        esta_ativ = any(p in clima_formatado for p in ["Júpiter", "Saturno", "Urano"])
-        pdf.set_font("helvetica", "B" if esta_ativ else "", 6.5)
+        pdf.set_xy(81, y_l2 + 1.1)
+        pdf.set_font("helvetica", estilo_clima, 6.5)
         pdf.multi_cell(46, 3.2, sanitizar(clima_formatado), 0, "L")
 
         # DIAGNÓSTICO
         pdf.rect(128, y_l2, 72, row_h2)
-        pdf.set_xy(129, y_l2 + 1.2)
+        pdf.set_xy(129, y_l2 + 1.1)
         pdf.set_font("helvetica", "", 6.5)
         pdf.multi_cell(70, 3.2, sanitizar(diag_txt), 0, "L")
 
+        # Salto vertical uniforme para a base da linha
         pdf.set_xy(10, y_l2 + row_h2)
 
     # 5. Diretrizes para o Plano de Integração (90 Dias)
