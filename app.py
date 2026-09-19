@@ -498,6 +498,10 @@ def disparar_nova_avaliacao():
     st.session_state["input_nome_cand"] = ""
     st.session_state["input_vaga_cand"] = ""
     st.session_state["input_nivel_cand"] = "C-Level / Executivo"
+    st.session_state["tipo_cad_modo"] = "Cadastrar Novo"
+    st.session_state["select_cand_existente_ativo"] = "Selecionar Candidato Cadastrado..."
+    st.session_state["select_override_arq"] = "Automático (Detectado por IA)"
+    st.session_state["radio_modo_tarot"] = "Manual (Preenchimento Direto)"
     st.session_state["astro_data_raw"] = "01/01/1999"
     st.session_state["astro_hora"] = datetime.strptime("12:00", "%H:%M").time()
     st.session_state["astro_local"] = "São Paulo, SP"
@@ -505,15 +509,19 @@ def disparar_nova_avaliacao():
     for key in list(st.session_state.keys()):
         if key.startswith("ai_analise_") or key.startswith("cost_"):
             del st.session_state[key]
-    if "mandala_calculada" in st.session_state: del st.session_state["mandala_calculada"]
-    if "big_three_calculado" in st.session_state: del st.session_state["big_three_calculado"]
-    if "transitos_calculados" in st.session_state: del st.session_state["transitos_calculados"]
+    for key in [
+        "mandala_calculada",
+        "big_three_calculado",
+        "transitos_calculados",
+        "arq_utilizado",
+        "astro_loc_resolvido",
+    ]:
+        st.session_state.pop(key, None)
     for i in range(1, 9):
         st.session_state[f"t_central_{i}"] = ""
         st.session_state[f"t_negativa_{i}"] = ""
         st.session_state[f"t_positiva_{i}"] = ""
         st.session_state[f"t_pontos_{i}"] = 3
-    st.rerun()
 
 st.title("Sistema de Diagnóstico Corporativo Dinâmico: Tarot & Astrologia Ponderada com Trânsitos")
 st.markdown("Plataforma avançada com classificação semântica inteligente, 4 pilares de arquétipos corporativos, override manual, trânsitos atuais e IA.")
@@ -956,8 +964,16 @@ with tab2:
 
     col_astro1, col_astro2 = st.columns(2)
     with col_astro1:
-        data_nasc_raw = st.text_input("Data de Nascimento (DD/MM/AAAA)", placeholder="02/05/1978")
-        local_nasc = st.text_input("Local de Nascimento (Cidade/Estado)", placeholder="São Paulo, SP")
+        data_nasc_raw = st.text_input(
+            "Data de Nascimento (DD/MM/AAAA)",
+            placeholder="02/05/1978",
+            key="astro_data_raw",
+        )
+        local_nasc = st.text_input(
+            "Local de Nascimento (Cidade/Estado)",
+            placeholder="São Paulo, SP",
+            key="astro_local",
+        )
     with col_astro2:
         hora_nasc = st.time_input("Horário de Nascimento", key="astro_hora")
         sistema_casas = st.selectbox("Sistema de Casas", ["Plácidus", "Koch", "Signo Inteiro"], index=0)
