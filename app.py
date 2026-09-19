@@ -694,6 +694,8 @@ with tab1:
         classificacao_f1 = "Recomendado com Ressalvas"
     else:
         classificacao_f1 = "Não Recomendado"
+    if sinal_vermelho_f1 in ["Sim", True]:
+        classificacao_f1 = "Não Recomendado (Veto de Governança)"
 
     st.markdown("---")
     st.info(f"📊 **Resultado Individual da Fase 1 (Tarot):** {total_t1} / 40 pontos ({perc_t1:.1f}% de aderência comportamental)")
@@ -719,6 +721,9 @@ with tab1:
         texto_ia_doc = st.session_state.get(cache_key_pdf)
         if not texto_ia_doc:
             texto_ia_doc = obter_ou_gerar_analise_ia(c_nome, c_vaga, arq_nome)
+
+        veto_governanca = sinal_vermelho_val in ["Sim", True]
+        classif = "Não Recomendado (Veto de Governança)" if veto_governanca else classif
 
         pdf = FPDF()
         pdf.add_page()
@@ -809,10 +814,33 @@ with tab1:
         pdf.set_font("helvetica", "B", 8)
         pdf.cell(0, 4.5, sanitizar_pdf("PARECER FINAL DO AVALIADOR:"), 0, 1)
         pdf.set_font("helvetica", "", 7.5)
-        parecer_ficha = (
-            f"Perfil avaliado para a vaga de {c_vaga or 'Geral'} ({nivel_hierarquico}). O candidato atinge {total_pts} pontos no total ({perc_t1:.1f}% de aderência), "
-            f"enquadrando-se na diretriz de '{classif}'. A avaliação reflete o alinhamento comportamental e estrutural mapeado."
+        notas_competencias = {
+            competencias_nomes[idx - 1]: float(st.session_state.get(f"t_pontos_{idx}", 3))
+            for idx in range(1, 9)
+        }
+        maiores_forcas = sorted(notas_competencias.items(), key=lambda item: item[1], reverse=True)[:2]
+        focos_ressalva = sorted(notas_competencias.items(), key=lambda item: item[1])[:2]
+        forcas_txt = ", ".join(f"{nome} ({nota:.0f}/5)" for nome, nota in maiores_forcas)
+        ressalvas_txt = ", ".join(f"{nome} ({nota:.0f}/5)" for nome, nota in focos_ressalva)
+        deliberacao_txt = (
+            "deliberação desfavorável, com veto de governança"
+            if veto_governanca else
+            f"deliberação de {classif.lower()}"
         )
+        if veto_governanca:
+            parecer_ficha = (
+                f"SUMÁRIO EXECUTIVO: Para a vaga de {c_vaga or 'Geral'} ({nivel_hierarquico}), o perfil alcançou "
+                f"{total_pts} / 40 pontos ({perc_t1:.1f}% de aderência). Maiores forças: {forcas_txt}. "
+                f"Focos de ressalva ou veto: {ressalvas_txt}. A {deliberacao_txt} decorre de risco crítico "
+                f"em Equilíbrio Emocional, Saúde Psicológica ou Confiabilidade e Ética. Classificação: '{classif}'."
+            )
+        else:
+            parecer_ficha = (
+                f"SUMÁRIO EXECUTIVO: Para a vaga de {c_vaga or 'Geral'} ({nivel_hierarquico}), o perfil alcançou "
+                f"{total_pts} / 40 pontos ({perc_t1:.1f}% de aderência). Maiores forças: {forcas_txt}. "
+                f"Focos de ressalva: {ressalvas_txt}. A avaliação sustenta {deliberacao_txt}, "
+                f"considerando o alinhamento comportamental e estrutural mapeado."
+            )
         pdf.set_fill_color(248, 249, 250)
         pdf.set_draw_color(200, 205, 210)
         pdf.multi_cell(0, 4.2, sanitizar_pdf(parecer_ficha), border=1, fill=True)
@@ -950,39 +978,52 @@ with tab1:
             texto_ia_doc,
             re.DOTALL | re.IGNORECASE | re.MULTILINE,
         )
-        if match_conclusao and len(match_conclusao.group(1).strip()) > 10:
-            texto_conclusao = match_conclusao.group(1).strip()
-            texto_conclusao = re.sub(r"^\s*[:\-–]\s*", "", texto_conclusao)
+        if veto_governanca:
+            texto_conclusao = (
+                f"PARECER FINAL: Não Recomendado (Veto de Governança).\n"
+                f"JUSTIFICATIVA EXECUTIVA: Embora o candidato tenha somado {total_pts} pontos "
+                f"({perc_t1:.1f}% de aderência), a candidatura foi vetada pelas regras de integridade e governança corporativa. "
+                f"As maiores forças identificadas foram {forcas_txt}; os focos de ressalva ou veto foram {ressalvas_txt}. "
+                "Riscos críticos em bases emocionais, psíquicas ou éticas representam ponto de ruptura para a governança da posição."
+            )
+        elif match_conclusao and len(match_conclusao.group(1).strip()) > 10:
+            texto_conclusao = (
+                f"PARECER FINAL: {classif}.\n"
+                "JUSTIFICATIVA EXECUTIVA: "
+                + re.sub(r"^\s*[:\-–]\s*", "", match_conclusao.group(1).strip())
+                + f"\nForças principais: {forcas_txt}. Focos de ressalva: {ressalvas_txt}."
+            )
+        else:
+            texto_conclusao = (
+                f"PARECER FINAL: {classif}.\n"
+                f"JUSTIFICATIVA EXECUTIVA: O candidato obteve {total_pts} pontos ({perc_t1:.1f}% de aderência). "
+                f"As competências de maior força foram {forcas_txt}; os principais focos de ressalva são {ressalvas_txt}. "
+                "A deliberação considera o equilíbrio entre desempenho, riscos mapeados e aderência à vaga."
+            )
 
-            pdf.set_font("helvetica", "", 7.5)
-            parags_conc = [p.strip() for p in texto_conclusao.split("\n") if p.strip()]
-            linhas_totais_conc = sum([max(1, math.ceil(pdf.get_string_width(p) / 175.0)) for p in parags_conc]) + len(parags_conc)
-            h_estimada_conc = 6.0 + float(linhas_totais_conc * 3.6) + 8.0
+        pdf.set_font("helvetica", "", 7.5)
+        parags_conc = [p.strip() for p in texto_conclusao.split("\n") if p.strip()]
+        linhas_totais_conc = sum([max(1, math.ceil(pdf.get_string_width(p) / 175.0)) for p in parags_conc]) + len(parags_conc)
+        h_estimada_conc = 6.0 + float(linhas_totais_conc * 3.6) + 8.0
 
-            if pdf.get_y() + h_estimada_conc > 275:
-                pdf.add_page()
+        if pdf.get_y() + h_estimada_conc > 275:
+            pdf.add_page()
 
-            y_conc = pdf.get_y()
+        y_conc = pdf.get_y()
+        pdf.set_font("helvetica", "B", 9)
+        pdf.set_fill_color(230, 235, 242)
+        pdf.set_xy(10, y_conc)
+        pdf.cell(190, 6.0, sanitizar_pdf("  CONCLUSÃO E RECOMENDAÇÃO FINAL"), 0, 1, "L", True)
 
-            # Cabeçalho da Conclusão
-            pdf.set_font("helvetica", "B", 9)
-            pdf.set_fill_color(230, 235, 242)
-            pdf.set_xy(10, y_conc)
-            pdf.cell(190, 6.0, sanitizar_pdf("  CONCLUSÃO E RECOMENDAÇÃO FINAL"), 0, 1, "L", True)
+        pdf.set_font("helvetica", "", 7.5)
+        pdf.set_xy(13, y_conc + 7.5)
+        pdf.multi_cell(184, 3.6, sanitizar_pdf(texto_conclusao), 0, "L", False)
 
-            # Texto da Conclusão renderizado primeiro
-            pdf.set_font("helvetica", "", 7.5)
-            pdf.set_xy(13, y_conc + 7.5)
-            pdf.multi_cell(184, 3.6, sanitizar_pdf(texto_conclusao), 0, "L", False)
-
-            # Ancoragem dinâmica: mede onde o texto realmente terminou e aplica margem de segurança
-            y_fim_conc = pdf.get_y() + 3.0
-            altura_final_box = max(18.0, y_fim_conc - y_conc)
-
-            # Borda externa envolvendo cabeçalho e conteúdo integral
-            pdf.set_draw_color(190, 195, 202)
-            pdf.rect(10, y_conc, 190, altura_final_box)
-            pdf.set_y(y_conc + altura_final_box + 4.0)
+        y_fim_conc = pdf.get_y() + 3.0
+        altura_final_box = max(18.0, y_fim_conc - y_conc)
+        pdf.set_draw_color(190, 195, 202)
+        pdf.rect(10, y_conc, 190, altura_final_box)
+        pdf.set_y(y_conc + altura_final_box + 4.0)
 
         res = pdf.output(dest="S")
         return res.encode("latin1") if isinstance(res, str) else bytes(res)
@@ -1196,9 +1237,43 @@ with tab2:
         soma_pesos = sum([v["peso"] for k, v in mandala_items])
         media_ponderada = soma_ponderada / soma_pesos if soma_pesos > 0 else 4.0
         total_t2_ajustado = media_ponderada * 12
-        perc_t2 = (total_t2_ajustado / 60.0) * 100
+        pontos_fase2 = total_t2_ajustado
+        aderencia_pct = (pontos_fase2 / 60.0) * 100
+        perc_t2 = aderencia_pct
+        if aderencia_pct >= 80.0:
+            status_fase2 = "Alta Sinergia"
+            descricao_fase2 = "Desempenho Robusto"
+            recomendacao_fase2 = "Prontidão Imediata"
+        elif aderencia_pct >= 65.0:
+            status_fase2 = "Aderência Operacional"
+            descricao_fase2 = "Desempenho Consistente com Atenção Pontual"
+            recomendacao_fase2 = "Acompanhamento direcionado"
+        else:
+            status_fase2 = "Ponto de Atenção"
+            descricao_fase2 = "Ciclo Desafiador"
+            recomendacao_fase2 = "Vulnerabilidade Temporária"
 
-        st.info(f"🌟 **Resultado Ponderado & Conjuntural da Fase 2 ({st.session_state.get('arq_utilizado', 'Padrão')}):** {total_t2_ajustado:.1f} / 60 pontos ({perc_t2:.1f}% de aderência estrutural ajustada ao momento)")
+        st.markdown("### Síntese da Fase 2")
+        quadro_pontuacao, quadro_aderencia = st.columns(2)
+        with quadro_pontuacao:
+            with st.container(border=True):
+                st.markdown(f"**PONTUAÇÃO AJUSTADA DA FASE 2: {pontos_fase2:.1f} / 60 PONTOS**")
+                st.caption("**A Matemática:** 12 casas x 5 pontos = teto de 60 pontos.")
+                st.caption("**O Ajuste:** Modulação dinâmica ponderada pelos trânsitos contemporâneos.")
+                st.caption("**Significado:** Capacidade e resiliência comportamental líquida.")
+                st.success(f"**Análise do Resultado:** {status_fase2} / {descricao_fase2}")
+        with quadro_aderencia:
+            with st.container(border=True):
+                st.markdown(f"**ADERÊNCIA ESTRUTURAL AO CICLO: {aderencia_pct:.1f}%**")
+                st.caption("**A Matemática:** Proporção direta da pontuação líquida sobre o teto de 60 pontos.")
+                st.caption("**Significado Corporativo:** Grau de prontidão imediata e harmonia com o momento contemporâneo.")
+                st.info(f"**Análise do Resultado:** {status_fase2} / {recomendacao_fase2}")
+
+        st.info(
+            f"**Diagnóstico Executivo Integrado:** A pontuação líquida de {pontos_fase2:.1f} pontos representa "
+            f"{aderencia_pct:.1f}% de aderência estrutural, enquadrando o candidato em **{status_fase2}** "
+            f"com **{descricao_fase2.lower()}** e recomendação de **{recomendacao_fase2.lower()}**."
+        )
         st.markdown("")
 
         pdf_fase2_bytes = gerar_laudo_fase2_pdf(

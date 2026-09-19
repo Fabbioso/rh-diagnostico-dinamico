@@ -44,12 +44,15 @@ def gerar_pdf_profissional(db_path="rh_diagnostico_dinamico.db", output_pdf="Lau
     sinal_vermelho = sinal_vermelho or "Não"
     arquetipo = arquetipo or "Governança, Compliance e Riscos"
 
+    is_vermelho = str(sinal_vermelho).strip().lower() in ["sim", "true", "1", "ativo"]
+    if is_vermelho:
+        classificacao = "Não Recomendado (Veto de Governança)"
+
     # Indicadores calculados para o relatório rico
     score_fase1 = pontos * 2.5
     score_fase2 = 82.2
     score_global = (score_fase1 * 0.7) + (score_fase2 * 0.3)
     
-    is_vermelho = str(sinal_vermelho).strip().upper() == "SIM"
     alerta_bg = "#FDDEDE" if is_vermelho else "#EBF7EE"
     alerta_border = "#E68282" if is_vermelho else "#8CC896"
     alerta_color = "#A01414" if is_vermelho else "#146E28"
@@ -385,8 +388,13 @@ def gerar_pdf_profissional(db_path="rh_diagnostico_dinamico.db", output_pdf="Lau
     pdf.set_font("helvetica", "", 7.5)
     parecer_txt = (
         f"O(A) candidato(a) {nome} foi avaliado(a) para a posicao de {vaga} sob o arquetipo {arquetipo}. "
-        f"O perfil enquadra-se na diretriz de '{classificacao}' com score de {score_global:.1f}%. "
-        f"A avaliacao cruza a base comportamental com o panorama estrutural e tramites vigentes."
+        + (
+            f"Embora tenha atingido {score_global:.1f}%, a candidatura foi vetada pelas regras de integridade e governanca corporativa. "
+            f"A classificacao compulsoria e '{classificacao}'."
+            if is_vermelho else
+            f"O perfil enquadra-se na diretriz de '{classificacao}' com score de {score_global:.1f}%. "
+            f"A avaliacao cruza a base comportamental com o panorama estrutural e tramites vigentes."
+        )
     )
     pdf.multi_cell(0, 4, parecer_txt, border=1, fill=True)
     pdf.ln(3)

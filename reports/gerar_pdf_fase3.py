@@ -380,24 +380,8 @@ def gerar_laudo_fase3_pdf(
         # Salto vertical uniforme para a base da linha
         pdf.set_xy(10, y_l2 + row_h2)
 
-    # 5. Diretrizes para o Plano de Integração (90 Dias)
-    pdf.ln(4)
-    pdf.set_font("helvetica", "B", 8.5)
-    pdf.set_text_color(24, 43, 73)
-    pdf.cell(0, 5, sanitizar("5. DIRETRIZES PARA O PLANO DE INTEGRAÇÃO (90 DIAS)"), 0, 1, "L")
-    pdf.set_font("helvetica", "", 7.2)
-    pdf.set_text_color(30, 41, 59)
-    pdf.set_fill_color(248, 250, 252)
-
-    plano_texto = (
-        "Dias 1 a 30: Imersão institucional, alinhamento de expectativas com a diretoria e mapeamento de processos críticos.\n"
-        "Dias 31 a 60: Assunção gradual de entregas táticas, liderança de comitês operacionais e validação de indicadores de desempenho.\n"
-        "Dias 61 a 90: Avaliação de impacto de 90 dias, entrega de projetos estruturantes e consolidação da governança sob o arquétipo."
-    )
-    pdf.multi_cell(0, 3.8, sanitizar(plano_texto), border=1, fill=True)
-    pdf.ln(8)
-
-    # Governança e Assinaturas
+    # Governança e assinaturas imediatamente após a matriz estrutural.
+    pdf.ln(6)
     y_sign = pdf.get_y()
     pdf.set_draw_color(100, 116, 139)
     pdf.line(20, y_sign, 85, y_sign)

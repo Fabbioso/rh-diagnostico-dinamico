@@ -47,6 +47,25 @@ ESCOPO_CORPORATIVO_CASA = {
     12: "Pontos cegos, riscos ocultos e resiliência"
 }
 
+def obter_faixa_aderencia(aderencia_pct):
+    if aderencia_pct >= 80.0:
+        return {
+            "status": "Alta Sinergia",
+            "descricao": "Desempenho Robusto",
+            "recomendacao": "Prontidão Imediata"
+        }
+    if aderencia_pct >= 65.0:
+        return {
+            "status": "Aderência Operacional",
+            "descricao": "Desempenho Consistente com Atenção Pontual",
+            "recomendacao": "Acompanhamento direcionado"
+        }
+    return {
+        "status": "Ponto de Atenção",
+        "descricao": "Ciclo Desafiador",
+        "recomendacao": "Vulnerabilidade Temporária"
+    }
+
 def gerar_laudo_fase2_pdf(c_nome, c_vaga, c_nivel, arq_ativo, d_nasc, h_nasc, loc_nasc, big_three, transitos, mandala_dados, total_pts, perc_aderencia):
     pdf = FPDF()
     pdf.add_page()
@@ -235,10 +254,71 @@ def gerar_laudo_fase2_pdf(c_nome, c_vaga, c_nivel, arq_ativo, d_nasc, h_nasc, lo
         
     pdf.ln(3)
     
-    # Rodapé com Indicador Ponderado
-    pdf.set_font("helvetica", "B", 8)
-    pdf.set_fill_color(245, 247, 250)
-    pdf.cell(0, 6, sanitizar_pdf(f"PONTUAÇÃO AJUSTADA DA FASE 2: {total_pts:.1f} / 60 PONTOS  |  ADERÊNCIA ESTRUTURAL AO CICLO: {perc_aderencia:.1f}%"), 1, 1, "L", True)
+    # Dashboard executivo com pontuação e aderência calculadas sobre o teto de 60.
+    pontos_fase2 = float(total_pts)
+    aderencia_pct = (pontos_fase2 / 60.0) * 100
+    faixa = obter_faixa_aderencia(aderencia_pct)
+    altura_quadros = 28.0
+    altura_sintese = 29.0
+    if pdf.get_y() + altura_quadros + altura_sintese + 6.0 > 275:
+        pdf.add_page()
+
+    x_inicio = 10.0
+    largura_quadro = 93.0
+    espaco_quadros = 4.0
+    y_quadros = pdf.get_y()
+
+    if aderencia_pct >= 80.0:
+        cor_badge = (220, 252, 231)
+        cor_badge_txt = (22, 101, 52)
+    elif aderencia_pct >= 65.0:
+        cor_badge = (254, 243, 199)
+        cor_badge_txt = (146, 64, 14)
+    else:
+        cor_badge = (254, 226, 226)
+        cor_badge_txt = (153, 27, 27)
+
+    def renderizar_card(x, titulo, valor, badge):
+        pdf.set_draw_color(190, 195, 202)
+        pdf.set_fill_color(248, 250, 252)
+        pdf.rect(x, y_quadros, largura_quadro, altura_quadros, "DF")
+        pdf.set_xy(x + 2.5, y_quadros + 2.0)
+        pdf.set_font("helvetica", "B", 8)
+        pdf.set_text_color(71, 85, 105)
+        pdf.cell(largura_quadro - 5, 4.2, sanitizar_pdf(titulo), 0, 1, "L")
+        pdf.set_xy(x + 2.5, y_quadros + 7.0)
+        pdf.set_font("helvetica", "B", 14)
+        pdf.set_text_color(24, 43, 73)
+        pdf.cell(largura_quadro - 5, 7.0, sanitizar_pdf(valor), 0, 1, "L")
+        y_badge = y_quadros + altura_quadros - 10.5
+        pdf.set_fill_color(*cor_badge)
+        pdf.rect(x + 2.5, y_badge, largura_quadro - 5, 7.5, "DF")
+        pdf.set_xy(x + 4, y_badge + 1.8)
+        pdf.set_font("helvetica", "B", 7.0)
+        pdf.set_text_color(*cor_badge_txt)
+        pdf.cell(largura_quadro - 8, 3.8, sanitizar_pdf(badge.upper()), 0, 0, "C")
+
+    renderizar_card(x_inicio, "CAPACIDADE ESTRUTURAL", f"{pontos_fase2:.1f} / 60.0", f"{faixa['status']} / {faixa['descricao']}")
+    renderizar_card(x_inicio + largura_quadro + espaco_quadros, "ADERÊNCIA AO CICLO", f"{aderencia_pct:.1f}%", faixa["recomendacao"])
+
+    y_sintese = y_quadros + altura_quadros + 4.0
+    pdf.set_draw_color(190, 195, 202)
+    pdf.set_fill_color(248, 250, 252)
+    pdf.rect(x_inicio, y_sintese, 190.0, altura_sintese, "DF")
+    pdf.set_fill_color(*cor_badge_txt)
+    pdf.rect(x_inicio, y_sintese, 3.0, altura_sintese, "F")
+    pdf.set_xy(x_inicio + 7, y_sintese + 2.0)
+    pdf.set_font("helvetica", "B", 8.5)
+    pdf.set_text_color(24, 43, 73)
+    pdf.cell(180, 4.5, sanitizar_pdf("DIAGNÓSTICO EXECUTIVO INTEGRADO"), 0, 1, "L")
+    pdf.set_font("helvetica", "", 7.5)
+    sintese = (
+        f"A pontuação líquida de {pontos_fase2:.1f} pontos representa {aderencia_pct:.1f}% de aderência estrutural. "
+        f"O resultado enquadra o candidato em {faixa['status']}, com {faixa['descricao'].lower()} "
+        f"e recomendação de {faixa['recomendacao'].lower()}."
+    )
+    pdf.set_xy(x_inicio + 7, y_sintese + 8.0)
+    pdf.multi_cell(180, 3.8, sanitizar_pdf(sintese), 0, "L")
     
     res = pdf.output(dest="S")
     return res.encode("latin1") if isinstance(res, str) else bytes(res)
