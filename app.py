@@ -494,6 +494,41 @@ if "astro_local" not in st.session_state: st.session_state["astro_local"] = "Sã
 if "astro_hora" not in st.session_state: st.session_state["astro_hora"] = datetime.strptime("12:00", "%H:%M").time()
 if "input_nome_cand" not in st.session_state: st.session_state["input_nome_cand"] = ""
 
+def inferir_nivel_hierarquico(cargo: str) -> str:
+    cargo_normalizado = remover_acentos(cargo)
+    niveis_por_padrao = [
+        (r"\b(ceo|cfo|coo|cto|cmo|cio|vp|vice presidente|presidente|c level|c-level|chief)\b", "C-Level / Executivo"),
+        (r"\b(diretor|diretora|director|director[a]?)\b", "Diretor"),
+        (r"\b(gerente|gerencia|head|manager)\b", "Gerente"),
+        (r"\b(coordenador|coordenadora|coordenacao)\b", "Coordenador"),
+        (r"\b(supervisor|supervisora|supervisao)\b", "Supervisor"),
+        (r"\b(especialista|analista)\b", "Especialista / Analista"),
+        (r"\b(tecnico|tecnica)\b", "Técnico"),
+        (r"\b(operacional|operador|operadora)\b", "Operacional"),
+    ]
+    for padrao, nivel in niveis_por_padrao:
+        if re.search(padrao, cargo_normalizado):
+            return nivel
+    return "Especialista / Analista"
+
+def auto_detectar_nivel_hierarquico():
+    cargo = st.session_state.get("input_vaga_cand", "")
+    nivel_inferido = inferir_nivel_hierarquico(cargo)
+    cargo_normalizado = remover_acentos(cargo)
+    possui_correspondencia = any(
+        re.search(padrao, cargo_normalizado)
+        for padrao in [
+            r"\b(ceo|cfo|coo|cto|cmo|cio|vp|vice presidente|presidente|c level|c-level|chief)\b",
+            r"\b(diretor|diretora|director|director[a]?)\b",
+            r"\b(gerente|gerencia|head|manager)\b",
+            r"\b(coordenador|coordenadora|coordenacao)\b",
+            r"\b(supervisor|supervisora|supervisao)\b",
+            r"\b(especialista|analista|tecnico|tecnica|operacional|operador|operadora)\b",
+        ]
+    )
+    if cargo.strip() and possui_correspondencia:
+        st.session_state["input_nivel_cand"] = nivel_inferido
+
 def disparar_nova_avaliacao():
     st.session_state["input_nome_cand"] = ""
     st.session_state["input_vaga_cand"] = ""
@@ -576,9 +611,17 @@ with tab1:
             nome_candidato = st.text_input("Nome Completo do Novo Candidato(a)", key="input_nome_cand")
 
     with col_c2:
-        vaga_cargo = st.text_input("Vaga / Cargo Pretendido", key="input_vaga_cand")
+        vaga_cargo = st.text_input(
+            "Vaga / Cargo Pretendido",
+            key="input_vaga_cand",
+            on_change=auto_detectar_nivel_hierarquico,
+        )
     with col_c3:
-        nivel_hierarquico = st.selectbox("Nível Hierárquico", ["C-Level / Executivo", "Diretor", "Gerente", "Supervisor", "Coordenador", "Especialista / Analista", "Técnico", "Operacional"], key="input_nivel_cand")
+        nivel_hierarquico = st.selectbox(
+            "Nível Hierárquico",
+            ["C-Level / Executivo", "Diretor", "Gerente", "Supervisor", "Coordenador", "Especialista / Analista", "Técnico", "Operacional"],
+            key="input_nivel_cand",
+        )
 
     modo_arq_input = st.selectbox(
         "Ajuste de Arquétipo (Automático ou Forçado)",
