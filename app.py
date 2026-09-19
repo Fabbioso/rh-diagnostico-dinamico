@@ -501,7 +501,7 @@ def disparar_nova_avaliacao():
     st.session_state["tipo_cad_modo"] = "Cadastrar Novo"
     st.session_state["select_cand_existente_ativo"] = "Selecionar Candidato Cadastrado..."
     st.session_state["select_override_arq"] = "Automático (Detectado por IA)"
-    st.session_state["radio_modo_tarot"] = "Manual (Preenchimento Direto)"
+    st.session_state["radio_modo_tarot"] = "Automático (Assistente Especialista com Regras Metodológicas)"
     st.session_state["astro_data_raw"] = "01/01/1999"
     st.session_state["astro_hora"] = datetime.strptime("12:00", "%H:%M").time()
     st.session_state["astro_local"] = "São Paulo, SP"
@@ -598,7 +598,7 @@ with tab1:
 
     st.markdown("---")
     st.subheader("Modo de Geração da Leitura das Cartas")
-    modo_geracao = st.radio("Selecione como deseja preencher as cartas nas 8 casas:", ["Manual (Preenchimento Direto)", "Automático (Assistente Especialista com Regras Metodológicas)"], key="radio_modo_tarot")
+    modo_geracao = st.radio("Selecione como deseja preencher as cartas nas 8 casas:", ["Manual (Preenchimento Direto)", "Automático (Assistente Especialista com Regras Metodológicas)"], index=1, key="radio_modo_tarot")
 
     if modo_geracao == "Automático (Assistente Especialista com Regras Metodológicas)":
         if st.button("🎲 Executar Sorteio e Cálculo Inteligente via Regras"):
