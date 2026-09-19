@@ -32,6 +32,167 @@ st.set_page_config(
     page_title="Sistema de Diagnóstico Corporativo Dinâmico - RH", layout="wide"
 )
 
+st.markdown(
+    """
+    <style>
+    /* =========================================================
+       1. ABAS DAS FASES 1, 2 e 3 (STEP PILLS EXECUTIVOS)
+       ========================================================= */
+    div[data-testid="stTabs"] [role="tablist"] {
+        gap: 12px !important;
+        border-bottom: 2px solid #CBD5E1 !important;
+        padding-bottom: 10px !important;
+    }
+
+    div[data-testid="stTabs"] [role="tab"] {
+        background-color: #F1F5F9 !important;
+        border: 1.8px solid #CBD5E1 !important;
+        border-radius: 8px !important;
+        padding: 10px 22px !important;
+        min-height: 42px !important;
+        margin-right: 6px !important;
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05) !important;
+        transition: all 0.2s ease-in-out !important;
+        cursor: pointer !important;
+    }
+
+    div[data-testid="stTabs"] [role="tab"]:hover {
+        background-color: #E2E8F0 !important;
+        border-color: #94A3B8 !important;
+        transform: translateY(-1px) !important;
+    }
+
+    div[data-testid="stTabs"] [role="tab"] * {
+        color: #334155 !important;
+        font-size: 14px !important;
+        font-weight: 600 !important;
+        text-decoration: none !important;
+    }
+
+    div[data-testid="stTabs"] [role="tab"][aria-selected="true"] {
+        background: linear-gradient(135deg, #1E3A8A 0%, #2563EB 100%) !important;
+        border: 1.8px solid #1E3A8A !important;
+        box-shadow: 0 4px 12px rgba(30, 58, 138, 0.3) !important;
+        transform: translateY(-1px) !important;
+    }
+
+    div[data-testid="stTabs"] [role="tab"][aria-selected="true"] * {
+        color: #FFFFFF !important;
+        font-weight: 700 !important;
+    }
+
+    /* Remove compulsoriamente a barra/linha vermelha nativa */
+    div[data-testid="stTabs"] [role="tablist"] > :not([role="tab"]),
+    div[data-testid="stTabs"] [data-baseweb="tab-highlight"],
+    div[data-testid="stTabs"] [data-baseweb="tab-border"] {
+        display: none !important;
+        visibility: hidden !important;
+        height: 0px !important;
+        opacity: 0 !important;
+        border: none !important;
+    }
+
+    /* =========================================================
+       2. FASE 1: BOTÃO "NOVA AVALIAÇÃO" (CINZA UTILITÁRIO NEUTRO)
+       ========================================================= */
+    div[data-testid="stButton"] button[aria-label*="Nova Avaliação"],
+    .st-key-nova_avaliacao button {
+        background-color: #F8FAFC !important;
+        border: 1.8px solid #94A3B8 !important;
+        border-radius: 8px !important;
+        min-height: 40px !important;
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05) !important;
+        transition: all 0.2s ease-in-out !important;
+    }
+
+    div[data-testid="stButton"] button[aria-label*="Nova Avaliação"] *,
+    .st-key-nova_avaliacao button * {
+        color: #334155 !important;
+        font-weight: 600 !important;
+        font-size: 14px !important;
+    }
+
+    div[data-testid="stButton"] button[aria-label*="Nova Avaliação"]:hover,
+    .st-key-nova_avaliacao button:hover {
+        background-color: #E2E8F0 !important;
+        border-color: #64748B !important;
+        transform: translateY(-1px) !important;
+    }
+
+    /* =========================================================
+       3. FASES 1, 2 E 3: DOWNLOADS EM PDF (VERDE ESMERALDA EXECUTIVO)
+       ========================================================= */
+    div[data-testid="stDownloadButton"] button {
+        background: linear-gradient(135deg, #065F46 0%, #047857 100%) !important;
+        border: 1px solid #065F46 !important;
+        border-radius: 8px !important;
+        min-height: 44px !important;
+        box-shadow: 0 3px 8px rgba(4, 120, 87, 0.25) !important;
+        transition: all 0.2s ease-in-out !important;
+    }
+
+    div[data-testid="stDownloadButton"] button * {
+        color: #FFFFFF !important;
+        font-weight: 700 !important;
+        font-size: 14px !important;
+    }
+
+    div[data-testid="stDownloadButton"] button:hover {
+        background: linear-gradient(135deg, #047857 0%, #059669 100%) !important;
+        border-color: #047857 !important;
+        box-shadow: 0 5px 14px rgba(4, 120, 87, 0.35) !important;
+        transform: translateY(-1px) !important;
+    }
+
+    /* =========================================================
+       FASE 3: PERSISTÊNCIA SQLITE (NAVY ARDÓSIA PROFUNDO #0F172A)
+       ========================================================= */
+    .st-key-salvar_sqlite button,
+    div[data-testid="stButton"] button[aria-label*="SQLite"],
+    div[data-testid="stButton"] button[aria-label*="Banco"] {
+        background-color: #0F172A !important;
+        border: 1.5px solid #334155 !important;
+        border-radius: 8px !important;
+        min-height: 44px !important;
+        box-shadow: 0 3px 8px rgba(15, 23, 42, 0.35) !important;
+        transition: all 0.2s ease-in-out !important;
+    }
+
+    .st-key-salvar_sqlite button *,
+    div[data-testid="stButton"] button[aria-label*="SQLite"] *,
+    div[data-testid="stButton"] button[aria-label*="Banco"] * {
+        color: #FFFFFF !important;
+        font-weight: 700 !important;
+        font-size: 14px !important;
+    }
+
+    .st-key-salvar_sqlite button:hover,
+    div[data-testid="stButton"] button[aria-label*="SQLite"]:hover,
+    div[data-testid="stButton"] button[aria-label*="Banco"]:hover {
+        background-color: #1E293B !important;
+        border-color: #475569 !important;
+        box-shadow: 0 5px 12px rgba(15, 23, 42, 0.45) !important;
+        transform: translateY(-1px) !important;
+    }
+
+    /* =========================================================
+       5. BOTÕES PRIMÁRIOS DE PROCESSAMENTO (AZUL CORPORATIVO)
+       ========================================================= */
+    button[data-testid="stBaseButton-primary"],
+    button[kind="primary"] {
+        background: linear-gradient(135deg, #1E3A8A 0%, #2563EB 100%) !important;
+        color: #FFFFFF !important;
+        border: none !important;
+        border-radius: 8px !important;
+        font-weight: 700 !important;
+        min-height: 44px !important;
+        box-shadow: 0 4px 10px rgba(37, 99, 235, 0.25) !important;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
 # Constantes de Faturamento da API Gemini (Flash)
 PRECO_ENTRADA_PER_TOKEN_USD = 0.075 / 1_000_000
 PRECO_SAIDA_PER_TOKEN_USD = 0.30 / 1_000_000
@@ -589,7 +750,7 @@ with tab1:
     with col_topo_t1:
         st.header("Fase 1: Parâmetros do Candidato e Detecção de Arquétipo")
     with col_topo_t2:
-        st.button("🔄 Nova Avaliação", on_click=disparar_nova_avaliacao, use_container_width=True)
+        st.button("🔄 Nova Avaliação", on_click=disparar_nova_avaliacao, use_container_width=True, key="nova_avaliacao")
 
     with sqlite3.connect("rh_diagnostico_dinamico.db") as conn_db:
         cursor_db = conn_db.cursor()
@@ -644,7 +805,7 @@ with tab1:
     modo_geracao = st.radio("Selecione como deseja preencher as cartas nas 8 casas:", ["Manual (Preenchimento Direto)", "Automático (Assistente Especialista com Regras Metodológicas)"], index=1, key="radio_modo_tarot")
 
     if modo_geracao == "Automático (Assistente Especialista com Regras Metodológicas)":
-        if st.button("🎲 Executar Sorteio e Cálculo Inteligente via Regras"):
+        if st.button("🎲 Executar Sorteio e Cálculo Inteligente via Regras", type="primary"):
             cartas_embaralhadas = random.sample(DECK_TAROT, len(DECK_TAROT))
             idx = 0
             for i in range(1, 9):
@@ -703,7 +864,7 @@ with tab1:
     c_nome_val = st.session_state.get("nome_candidato") or st.session_state.get("input_nome_cand", "") or (nome_candidato if 'nome_candidato' in locals() else "")
     cache_key_check = f"ai_analise_v3_{c_nome_val}_{vaga_cargo}"
 
-    if st.button("🤖 Gerar Análise Qualitativa por IA (Fase 1)"):
+    if st.button("🤖 Gerar Análise Qualitativa por IA (Fase 1)", type="primary"):
         with st.spinner("Consultando o Gemini 3.8 Flash para gerar o parecer completo das 8 casas..."):
             obter_ou_gerar_analise_ia(c_nome_val, vaga_cargo, arq_nome)
         st.success("Análise gerada e pronta para exportação!")
@@ -1203,7 +1364,7 @@ with tab2:
             }
         return casas_res, big_three, {}
 
-    if st.button("Processar Mandala Ponderada & Trânsitos Atuais"):
+    if st.button("Processar Mandala Ponderada & Trânsitos Atuais", type="primary"):
         with st.spinner("Calculando efemérides natais, trânsitos atuais e aplicando matrizes..."):
             mandala, big_three, transitos = calcular_mandala_ponderada_com_transitos(data_nasc_raw, hora_nasc, local_nasc, arq_pesos)
             if mandala and big_three:
@@ -1316,7 +1477,7 @@ with tab3:
     st.header("Fase 3: FICHA DE AVALIAÇÃO INTEGRADA E PONDERADA")
     st.markdown("Governança final cruzando o Tarot, a Astrologia Ponderada por Arquétipo e Momentos de Trânsito.")
 
-    if st.button("Gerar Ficha de Avaliação Integrada"):
+    if st.button("Gerar Ficha de Avaliação Integrada", type="primary"):
         st.session_state["ficha_gerada"] = True
 
     if st.session_state.get("ficha_gerada", False):
@@ -1446,7 +1607,7 @@ with tab3:
                     use_container_width=True
                 )
             with col_a2:
-                if st.button("💾 Salvar no Banco Dinâmico (SQLite)", use_container_width=True):
+                if st.button("💾 Salvar no Banco Dinâmico (SQLite)", use_container_width=True, key="salvar_sqlite"):
                     if c_nome in ["", "Candidato(a)"]:
                         st.error("Informe um nome de candidato válido.")
                     else:
