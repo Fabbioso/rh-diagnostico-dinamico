@@ -29,6 +29,7 @@ from core.constants import (
 )
 from services.database_service import init_db, salvar_avaliacao, listar_candidatos_salvos, obter_avaliacao_por_id
 from services.ai_service import configurar_gemini, gerar_analise_fase1, gerar_deliberacao_fase3
+from services.scoring_service import sortear_cartas_fase1, calcular_pontuacao_fase1, calcular_pontuacao_fase2, calcular_indice_global_integrado
 # Configuração inicial da página
 st.set_page_config(
     page_title="Sistema de Diagnóstico Corporativo Dinâmico - RH", layout="wide"
@@ -327,6 +328,7 @@ def extrair_secao_competencia(texto_ia, pos_num, nome_comp):
         return ""
     
     padroes_secao = [
+        rf"(?:#{{1,6}}\s*)?\[?\s*CASA\s*{pos_num}\s*:\s*{re.escape(nome_comp)}\s*\]?",
         rf"(?:###?\s*)?(?:{pos_num}\.|\b{pos_num}\b)\s*{re.escape(nome_comp)}",
         rf"Casa\s*{pos_num}\s*:\s*{re.escape(nome_comp)}",
         rf"(?:{pos_num}\.|\b{pos_num}\b)\s*{re.escape(nome_comp)}"
@@ -334,6 +336,7 @@ def extrair_secao_competencia(texto_ia, pos_num, nome_comp):
     
     cabecalho_conclusao = r"^(?:\s*(?:#{1,6}|\*\*)?\s*(?:\d+\.\s*)?(?:\*\*)?\s*CONCLUS[ÃA]O\s*(?:\*\*)?\s*:?(?:\s|$))"
     proximos_marcadores = [
+        r"(?:#{1,6}\s*)?\[?\s*CASA\s*\d+\s*:",
         r"(?:###?\s*)?\d+\.\s*[A-Z]",
         r"Casa\s*\d+\s*:",
         cabecalho_conclusao
@@ -429,6 +432,20 @@ def extrair_sintese_competencia(texto_ia, pos_num, nome_comp):
         return sintese
     return "Avaliação metodológica integrada dos arcanos alinhada à competência."
 
+def armazenar_analise_fase1(texto_ia, competencias_nomes):
+    """Persiste os campos parseados da análise para uso pelos relatórios."""
+    for pos_num, nome_comp in enumerate(competencias_nomes, start=1):
+        dados = extrair_descricao_competencia(texto_ia, pos_num, nome_comp)
+        carta_central = st.session_state.get(f"t_central_{pos_num}", "-")
+        carta_negativa = st.session_state.get(f"t_negativa_{pos_num}", "-")
+        carta_positiva = st.session_state.get(f"t_positiva_{pos_num}", "-")
+        st.session_state[f"analise_fase1_casa_{pos_num}"] = {
+            "resumo": dados.get("resumo", ""),
+            "central_desc": remover_nome_carta_descricao(dados.get("central", ""), carta_central),
+            "negativa_desc": remover_nome_carta_descricao(dados.get("negativa", ""), carta_negativa),
+            "positiva_desc": remover_nome_carta_descricao(dados.get("positiva", ""), carta_positiva),
+        }
+
 def chave_analise_ia(c_nome, c_vaga):
     return f"ai_analise_v3_{c_nome}_{c_vaga}"
 
@@ -436,15 +453,16 @@ def chave_analise_ia(c_nome, c_vaga):
 def obter_ou_gerar_analise_ia(c_nome, c_vaga, arq_ativo, sinal_vermelho=None):
     # Incremento de versão no cache para descartar pareceres antigos gravados em sessão
     cache_key = chave_analise_ia(c_nome, c_vaga)
-    if cache_key in st.session_state:
-        return st.session_state[cache_key]
-
-    dados_casas = {}
     competencias_nomes = [
         "Hard Skills", "Soft Skills", "Fit Cultural",
         "Desafios", "Potencial Futuro", "Equilíbrio Emocional",
         "Saúde Psicológica", "Confiabilidade e Ética"
     ]
+    if cache_key in st.session_state:
+        armazenar_analise_fase1(st.session_state[cache_key], competencias_nomes)
+        return st.session_state[cache_key]
+
+    dados_casas = {}
     for i in range(1, 9):
         dados_casas[i] = {
             "nome": competencias_nomes[i-1],
@@ -481,13 +499,19 @@ def obter_ou_gerar_analise_ia(c_nome, c_vaga, arq_ativo, sinal_vermelho=None):
             }
 
             st.session_state[cache_key] = texto_gerado
+            armazenar_analise_fase1(texto_gerado, competencias_nomes)
+            st.session_state["ultima_analise_fase1_fallback"] = not sucesso
             return texto_gerado
         except Exception as e:
             msg_erro = f"Erro na execução da API do Gemini: {e}"
             st.error(msg_erro)
+            st.session_state["ultima_analise_fase1_fallback"] = True
             return msg_erro
     else:
-        return "Análise qualitativa padrão (Configure a GEMINI_API_KEY em st.secrets para habilitar a geração avançada por IA)."
+        st.session_state["ultima_analise_fase1_fallback"] = True
+        texto_padrao = "Análise qualitativa padrão (Configure a GEMINI_API_KEY em st.secrets para habilitar a geração avançada por IA)."
+        armazenar_analise_fase1(texto_padrao, competencias_nomes)
+        return texto_padrao
 
 def classificar_arquétipo_manual(vaga_texto, selecao_manual="Automático (Detectado por IA)"):
     if selecao_manual != "Automático (Detectado por IA)":
@@ -586,7 +610,7 @@ def inferir_nivel(cargo_texto: str) -> str:
         return ""
     c = cargo_texto.lower().strip()
 
-    if re.search(r'\b(diretor|diretoria|cfo|ceo|cto|coo|c-level|vp|vice-presidente)\b', c):
+    if re.search(r'\b(diretor|diretora|diretoria|cfo|ceo|cto|coo|c-level|vp|vice-presidente)\b', c):
         return "Diretor"
     if re.search(r'\b(gerente|gerência|gerencia|head)\b', c):
         return "Gerente"
@@ -596,7 +620,7 @@ def inferir_nivel(cargo_texto: str) -> str:
         return "Supervisor"
     if re.search(r'\b(especialista|consultor|consultora)\b', c):
         return "Especialista"
-    if re.search(r'\b(assistente|auxiliar|estagiário|estagiario)\b', c):
+    if re.search(r'\b(assistente|auxiliar|estagiário|estagiaria|estagiária|estagiario)\b', c):
         return "Assistente"
     return "Analista"
 
@@ -790,16 +814,16 @@ with tab1:
 
     if modo_geracao == "Automático (Assistente Especialista com Regras Metodológicas)":
         if st.button("🎲 Executar Sorteio e Cálculo Inteligente via Regras", key="btn_sortear_fase1", type="primary"):
-            cartas_embaralhadas = random.sample(DECK_TAROT, len(DECK_TAROT))
-            idx = 0
-            for i in range(1, 9):
-                c_cent = cartas_embaralhadas[idx % len(DECK_TAROT)]; idx += 1
-                c_neg = cartas_embaralhadas[idx % len(DECK_TAROT)]; idx += 1
-                c_pos = cartas_embaralhadas[idx % len(DECK_TAROT)]; idx += 1
-                st.session_state[f"t_central_{i}"] = c_cent
-                st.session_state[f"t_negativa_{i}"] = c_neg
-                st.session_state[f"t_positiva_{i}"] = c_pos
-                st.session_state[f"t_pontos_{i}"] = calcular_nota_metodologica(i, c_cent, c_neg, c_pos)
+            definicoes_casas = {
+                i: {"nome": nome}
+                for i, nome in enumerate(COMPETENCIAS_FASE_1, start=1)
+            }
+            resultado_sorteio = sortear_cartas_fase1(DECK_TAROT, definicoes_casas)
+            for i, dados_casa in resultado_sorteio.items():
+                st.session_state[f"t_central_{i}"] = dados_casa["central"]
+                st.session_state[f"t_negativa_{i}"] = dados_casa["negativa"]
+                st.session_state[f"t_positiva_{i}"] = dados_casa["positiva"]
+                st.session_state[f"t_pontos_{i}"] = dados_casa["nota"]
             st.session_state["sorteio_realizado"] = True
             st.success("Sorteio e atribuição de notas concluídos com sucesso!")
             st.rerun()
@@ -855,19 +879,16 @@ with tab1:
                     st.rerun()
 
         if resultado_calculado and (modo_geracao == "Automático (Assistente Especialista com Regras Metodológicas)" or st.session_state.get("manual_validado", False)):
-            pontuacoes_t1 = [st.session_state.get(f"t_pontos_{i}", 3) for i in range(1, 9)]
-            total_t1 = sum(pontuacoes_t1)
-            perc_t1 = (total_t1 / 40.0) * 100
+            dados_casas_f1 = {
+                i: {"nota": st.session_state.get(f"t_pontos_{i}", 3)}
+                for i in range(1, 9)
+            }
+            total_t1, perc_t1, classificacao_f1 = calcular_pontuacao_fase1(dados_casas_f1)
+            pontuacoes_t1 = [dados_casas_f1[i]["nota"] for i in range(1, 9)]
 
             p6, p7, p8 = st.session_state.get("t_pontos_6", 3), st.session_state.get("t_pontos_7", 3), st.session_state.get("t_pontos_8", 3)
             sinal_vermelho_f1 = "Sim" if (p6 <= 2 or p7 <= 2 or p8 <= 2) else "Não"
 
-            if total_t1 >= 32:
-                classificacao_f1 = "Altamente Recomendado"
-            elif total_t1 >= 24:
-                classificacao_f1 = "Recomendado com Ressalvas"
-            else:
-                classificacao_f1 = "Não Recomendado"
             if sinal_vermelho_f1 in ["Sim", True]:
                 classificacao_f1 = "Não Recomendado (Veto de Governança)"
 
@@ -885,7 +906,10 @@ with tab1:
         if st.button("🤖 Gerar Análise Qualitativa por IA (Fase 1)", type="primary"):
             with st.spinner("Consultando o Gemini 3.8 Flash para gerar o parecer completo das 8 casas..."):
                 obter_ou_gerar_analise_ia(c_nome_val, vaga_cargo, arq_nome)
-            st.success("Análise gerada e pronta para exportação!")
+            if st.session_state.get("ultima_analise_fase1_fallback", False):
+                st.warning("A síntese de contingência foi aplicada devido à indisponibilidade da geração por IA.")
+            else:
+                st.success("Análise gerada e pronta para exportação!")
     elif deve_exibir_matriz:
         st.info("💡 Preencha as cartas Central, Negativa e Positiva das 8 casas e confirme o cálculo para liberar a análise qualitativa e o PDF.")
 
@@ -1097,10 +1121,16 @@ with tab1:
             cartas_str = f"Carta Central: {c_cent}  |  Carta Negativa: {c_neg}  |  Carta Positiva: {c_pos}"
             conteudo_comp = extrair_secao_competencia(texto_ia_doc, i, competencias_nomes[i-1])
 
-            dados_competencia = extrair_descricao_competencia(texto_ia_doc, i, competencias_nomes[i-1])
-            desc_central = remover_nome_carta_descricao(dados_competencia.get("central", ""), c_cent)
-            desc_negativa = remover_nome_carta_descricao(dados_competencia.get("negativa", ""), c_neg)
-            desc_positiva = remover_nome_carta_descricao(dados_competencia.get("positiva", ""), c_pos)
+            dados_competencia = st.session_state.get(f"analise_fase1_casa_{i}")
+            if not dados_competencia:
+                dados_competencia = extrair_descricao_competencia(texto_ia_doc, i, competencias_nomes[i-1])
+                desc_central = remover_nome_carta_descricao(dados_competencia.get("central", ""), c_cent)
+                desc_negativa = remover_nome_carta_descricao(dados_competencia.get("negativa", ""), c_neg)
+                desc_positiva = remover_nome_carta_descricao(dados_competencia.get("positiva", ""), c_pos)
+            else:
+                desc_central = dados_competencia.get("central_desc", "")
+                desc_negativa = dados_competencia.get("negativa_desc", "")
+                desc_positiva = dados_competencia.get("positiva_desc", "")
             resumo = dados_competencia.get("resumo", "")
 
             blocos_parsed = []
@@ -1414,12 +1444,19 @@ with tab2:
             st.markdown("")
 
         mandala_items = list(st.session_state["mandala_calculada"].items())
-        soma_ponderada = sum([v["nota_base"] * v["peso"] for k, v in mandala_items])
-        soma_pesos = sum([v["peso"] for k, v in mandala_items])
-        media_ponderada = soma_ponderada / soma_pesos if soma_pesos > 0 else 4.0
-        total_t2_ajustado = media_ponderada * 12
-        pontos_fase2 = total_t2_ajustado
-        aderencia_pct = (pontos_fase2 / 60.0) * 100
+        casas_astrologicas_f2 = {
+            indice: {"nota": dados.get("nota_base", 4.0)}
+            for indice, (_, dados) in enumerate(mandala_items, start=1)
+        }
+        pesos_arquetipo_f2 = {
+            f"C{indice}": dados.get("peso", 1.0)
+            for indice, (_, dados) in enumerate(mandala_items, start=1)
+        }
+        pontos_fase2, aderencia_pct, diagnostico_fase2 = calcular_pontuacao_fase2(
+            casas_astrologicas_f2,
+            pesos_arquetipo_f2,
+        )
+        total_t2_ajustado = (aderencia_pct / 100.0) * 60.0
         perc_t2 = aderencia_pct
         if aderencia_pct >= 80.0:
             status_fase2 = "Alta Sinergia"
@@ -1500,24 +1537,30 @@ with tab3:
     if st.button("Gerar Ficha de Avaliação Integrada", type="primary", key="btn_gerar_ficha_fase3"):
         with st.spinner("🤖 A IA está cruzando a Fase 1 (Tarot) com a Fase 2 (Astrologia) e redigindo a Deliberação Executiva..."):
             pontuacoes_f1_btn = [st.session_state.get(f"t_pontos_{i}", 3) for i in range(1, 9)]
-            perc_f1_btn = (sum(pontuacoes_f1_btn) / 40.0) * 100
+            notas_f1_btn = {
+                indice: {"nota": pontuacoes_f1_btn[indice - 1]}
+                for indice in range(1, 9)
+            }
+            _, perc_f1_btn, _ = calcular_pontuacao_fase1(notas_f1_btn)
             mandala_btn = st.session_state.get("mandala_calculada", {})
             if mandala_btn:
                 itens_mandala_btn = list(mandala_btn.items())
-                soma_p_btn = sum(v["nota_base"] * v["peso"] for _, v in itens_mandala_btn)
-                soma_w_btn = sum(v["peso"] for _, v in itens_mandala_btn)
-                total_f2_btn = (soma_p_btn / soma_w_btn) * 12 if soma_w_btn > 0 else 48.0
-                perc_f2_btn = (total_f2_btn / 60.0) * 100
+                casas_btn = {
+                    indice: {"nota": dados.get("nota_base", 4.0)}
+                    for indice, (_, dados) in enumerate(itens_mandala_btn, start=1)
+                }
+                pesos_btn = {
+                    f"C{indice}": dados.get("peso", 1.0)
+                    for indice, (_, dados) in enumerate(itens_mandala_btn, start=1)
+                }
+                _, perc_f2_btn, _ = calcular_pontuacao_fase2(casas_btn, pesos_btn)
             else:
                 perc_f2_btn = 80.0
-            indice_btn = (perc_f1_btn * 0.7) + (perc_f2_btn * 0.3)
-            sinal_btn = any(pontuacoes_f1_btn[i - 1] <= 2 for i in [6, 7, 8])
-            if indice_btn >= 80:
-                classificacao_btn = "Altamente Recomendado (Aderência Superior a 80%)"
-            elif indice_btn >= 65:
-                classificacao_btn = "Recomendado com Ressalvas (Aderência entre 65% e 79%)"
-            else:
-                classificacao_btn = "Não Recomendado (Abaixo de 65%: Riscos severos)"
+            indice_btn, classificacao_btn, sinal_btn, _ = calcular_indice_global_integrado(
+                perc_f1_btn,
+                perc_f2_btn,
+                notas_f1_btn,
+            )
 
             notas_btn = {
                 nome: pontuacoes_f1_btn[idx]
@@ -1530,33 +1573,29 @@ with tab3:
             forcas_btn = ", ".join(f"{nome} ({nota}/5)" for nome, nota in sorted(notas_btn.items(), key=lambda item: item[1], reverse=True)[:2])
             atencoes_btn = ", ".join(f"{nome} ({nota}/5)" for nome, nota in sorted(notas_btn.items(), key=lambda item: item[1])[:2])
 
-            if GEMINI_API_DISPONIVEL:
-                sucesso_deliberacao, parecer_deliberacao, telemetria_deliberacao = gerar_deliberacao_fase3(
-                    st.session_state.get("candidato_nome", "Candidato(a)"),
-                    st.session_state.get("candidato_cargo", vaga_cargo),
-                    st.session_state.get("candidato_nivel", nivel_hierarquico),
-                    st.session_state.get("arq_utilizado", arq_nome),
-                    perc_f1_btn,
-                    perc_f2_btn,
-                    indice_btn,
-                    classificacao_btn,
-                    sinal_btn,
-                    forcas_btn,
-                    atencoes_btn,
-                )
-                if sucesso_deliberacao:
-                    st.session_state["parecer_tecnico"] = parecer_deliberacao
-                    st.session_state["telemetria_fase3"] = telemetria_deliberacao
-                else:
-                    st.session_state["parecer_tecnico"] = "Dossiê Integrado consolidado com sucesso!"
-                    st.error(parecer_deliberacao)
-            else:
-                st.session_state["parecer_tecnico"] = "Dossiê Integrado consolidado com sucesso!"
+            sucesso_deliberacao, parecer_deliberacao, telemetria_deliberacao = gerar_deliberacao_fase3(
+                st.session_state.get("candidato_nome", "Candidato(a)"),
+                st.session_state.get("candidato_cargo", vaga_cargo),
+                st.session_state.get("candidato_nivel", nivel_hierarquico),
+                st.session_state.get("arq_utilizado", arq_nome),
+                perc_f1_btn,
+                perc_f2_btn,
+                indice_btn,
+                classificacao_btn,
+                sinal_btn,
+                forcas_btn,
+                atencoes_btn,
+            )
+            st.session_state["parecer_tecnico"] = parecer_deliberacao
+            st.session_state["telemetria_fase3"] = telemetria_deliberacao
+            st.session_state["ficha_integrada_gerada"] = True
             st.session_state["ficha_gerada"] = True
+            if not sucesso_deliberacao:
+                st.warning("A síntese de contingência da deliberação integrada foi aplicada.")
         st.success("Dossiê Integrado consolidado com sucesso!")
         st.rerun()
 
-    if st.session_state.get("ficha_gerada", False):
+    if st.session_state.get("ficha_integrada_gerada", st.session_state.get("ficha_gerada", False)):
         pontuacoes_t1 = [st.session_state.get(f"t_pontos_{i}", 3) for i in range(1, 9)]
         total_t1 = sum(pontuacoes_t1)
         perc_t1 = (total_t1 / 40.0) * 100
@@ -1564,24 +1603,30 @@ with tab3:
         mandala_dados = st.session_state.get("mandala_calculada", {})
         if mandala_dados:
             mandala_items = list(mandala_dados.items())
-            soma_p = sum([v["nota_base"] * v["peso"] for k, v in mandala_items])
-            soma_w = sum([v["peso"] for k, v in mandala_items])
-            total_t2_ajustado = (soma_p / soma_w) * 12 if soma_w > 0 else 48.0
-            perc_t2 = (total_t2_ajustado / 60.0) * 100
+            casas_f2 = {
+                indice: {"nota": dados.get("nota_base", 4.0)}
+                for indice, (_, dados) in enumerate(mandala_items, start=1)
+            }
+            pesos_f2 = {
+                f"C{indice}": dados.get("peso", 1.0)
+                for indice, (_, dados) in enumerate(mandala_items, start=1)
+            }
+            _, perc_t2, _ = calcular_pontuacao_fase2(casas_f2, pesos_f2)
+            total_t2_ajustado = (perc_t2 / 100.0) * 60.0
         else:
             total_t2_ajustado = 48.0
             perc_t2 = 80.0
 
-        indice_global = (perc_t1 * 0.7) + (perc_t2 * 0.3)
-        p6, p7, p8 = st.session_state.get("t_pontos_6", 3), st.session_state.get("t_pontos_7", 3), st.session_state.get("t_pontos_8", 3)
-        sinal_vermelho = "Sim" if (p6 <= 2 or p7 <= 2 or p8 <= 2) else "Não"
-
-        if indice_global >= 80:
-            classificacao = "Altamente Recomendado (Aderência Superior a 80%)"
-        elif indice_global >= 65:
-            classificacao = "Recomendado com Ressalvas (Aderência entre 65% e 79%)"
-        else:
-            classificacao = "Não Recomendado (Abaixo de 65%: Riscos severos)"
+        notas_fase1_f3 = {
+            indice: {"nota": st.session_state.get(f"t_pontos_{indice}", 3)}
+            for indice in range(1, 9)
+        }
+        indice_global, classificacao, sinal_ativo, motivo_sinal = calcular_indice_global_integrado(
+            perc_t1,
+            perc_t2,
+            notas_fase1_f3,
+        )
+        sinal_vermelho = "Sim" if sinal_ativo else "Não"
 
         c_nome = st.session_state.get("candidato_nome", "Candidato(a)")
         c_vaga = st.session_state.get("candidato_cargo", "Cargo")
@@ -1630,6 +1675,7 @@ with tab3:
                 "Desafios", "Potencial Futuro", "Equilíbrio Emocional", 
                 "Saúde Psicológica", "Confiabilidade e Ética"
             ]
+            armazenar_analise_fase1(texto_ia_laudo, competencias_nomes)
             dados_tabela_f1 = []
             for idx_c in range(1, 9):
                 desc_central = ""
@@ -1641,10 +1687,16 @@ with tab3:
                 c_neg_v = st.session_state.get(f"t_negativa_{idx_c}", "-")
                 c_pos_v = st.session_state.get(f"t_positiva_{idx_c}", "-")
 
-                dados_competencia = extrair_descricao_competencia(texto_ia_laudo, idx_c, competencias_nomes[idx_c - 1])
-                desc_central = remover_nome_carta_descricao(dados_competencia.get("central", ""), c_cent_v)
-                desc_negativa = remover_nome_carta_descricao(dados_competencia.get("negativa", ""), c_neg_v)
-                desc_positiva = remover_nome_carta_descricao(dados_competencia.get("positiva", ""), c_pos_v)
+                dados_competencia = st.session_state.get(f"analise_fase1_casa_{idx_c}")
+                if not dados_competencia:
+                    dados_competencia = extrair_descricao_competencia(texto_ia_laudo, idx_c, competencias_nomes[idx_c - 1])
+                    desc_central = remover_nome_carta_descricao(dados_competencia.get("central", ""), c_cent_v)
+                    desc_negativa = remover_nome_carta_descricao(dados_competencia.get("negativa", ""), c_neg_v)
+                    desc_positiva = remover_nome_carta_descricao(dados_competencia.get("positiva", ""), c_pos_v)
+                else:
+                    desc_central = dados_competencia.get("central_desc", "")
+                    desc_negativa = dados_competencia.get("negativa_desc", "")
+                    desc_positiva = dados_competencia.get("positiva_desc", "")
                 resumo = dados_competencia.get("resumo", "")
 
                 if not resumo:
