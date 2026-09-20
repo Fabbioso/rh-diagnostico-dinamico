@@ -1,5 +1,6 @@
 streamlit
 google-genai
+google-generativeai
 kerykeion==5.12.9
 fpdf2
 weasyprint

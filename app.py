@@ -28,6 +28,7 @@ from core.constants import (
     COMPETENCIAS_FASE_1,
 )
 from services.database_service import init_db, salvar_avaliacao, listar_candidatos_salvos, obter_avaliacao_por_id
+from services.ai_service import configurar_gemini, gerar_analise_fase1, gerar_deliberacao_fase3
 # Configuração inicial da página
 st.set_page_config(
     page_title="Sistema de Diagnóstico Corporativo Dinâmico - RH", layout="wide"
@@ -202,8 +203,6 @@ TAXA_CAMBIO_USD_BRL = 5.50
 
 # Inicialização da API Gemini
 try:
-    from google import genai
-    
     api_key_val = None
     if hasattr(st, "secrets"):
         if "GEMINI_API_KEY" in st.secrets:
@@ -214,11 +213,7 @@ try:
     if not api_key_val and "GEMINI_API_KEY" in os.environ:
         api_key_val = os.environ["GEMINI_API_KEY"]
 
-    if api_key_val:
-        gemini_client = genai.Client(api_key=api_key_val)
-        GEMINI_API_DISPONIVEL = True
-    else:
-        GEMINI_API_DISPONIVEL = False
+    GEMINI_API_DISPONIVEL = configurar_gemini(api_key_val)
 except Exception as e:
     GEMINI_API_DISPONIVEL = False
 
@@ -452,7 +447,7 @@ def obter_ou_gerar_analise_ia(c_nome, c_vaga, arq_ativo, sinal_vermelho=None):
     ]
     for i in range(1, 9):
         dados_casas[i] = {
-            "titulo": competencias_nomes[i-1],
+            "nome": competencias_nomes[i-1],
             "central": st.session_state.get(f"t_central_{i}", "Não informada"),
             "negativa": st.session_state.get(f"t_negativa_{i}", "Não informada"),
             "positiva": st.session_state.get(f"t_positiva_{i}", "Não informada"),
@@ -466,58 +461,23 @@ def obter_ou_gerar_analise_ia(c_nome, c_vaga, arq_ativo, sinal_vermelho=None):
 
     if GEMINI_API_DISPONIVEL:
         try:
-            prompt_usuario = f"""
-Gere a Análise do Jogo detalhada e o Parecer Final para o seguinte processo seletivo:
-- Candidato(a): {c_nome or 'Candidato'}
-- Vaga/Cargo: {c_vaga or 'Geral'}
-- Arquétipo Organizacional Ativo: {arq_ativo}
-
-Cartas sorteadas e notas por competência nas 8 posições:
-"""
-            for num, d in dados_casas.items():
-                prompt_usuario += f"\n- Casa {num} ({d['titulo']} - Nota {d['nota']}/5): Carta Central: {d['central']} | Carta Negativa: {d['negativa']} | Carta Positiva: {d['positiva']}"
-
-            # Diretriz imperativa de deliberação
-            if is_sinal_v:
-                diretriz_governanca = """
-DIRETRIZ MANDATÓRIA DE GOVERNANÇA CORPORATIVA (### CONCLUSÃO):
-- SINAL VERMELHO ATIVADO: Detectado risco crítico em bases estruturais (Casas 6, 7 ou 8: Equilíbrio Emocional, Saúde Psicológica ou Confiabilidade/Ética).
-- Na '### CONCLUSÃO', você DEVE OBRIGATORIAMENTE deliberar como: "Não Recomendado (Sinal Vermelho Ativado)".
-- É TERMINANTEMENTE PROIBIDO emitir parecer "Recomendado" ou "Recomendado com Ressalvas", mesmo que o candidato possua notas altas em outras competências.
-- Justifique o veto enfatizando que os riscos emocionais, psíquicos ou éticos representam um ponto de ruptura inaceitável para a governança da posição.
-"""
-            else:
-                diretriz_governanca = """
-DIRETRIZ DE GOVERNANÇA CORPORATIVA (### CONCLUSÃO):
-- SINAL VERMELHO DESATIVADO: Bases estruturais preservadas.
-- Delibere com equilíbrio com base na aderência do perfil ao arquétipo, enquadrando como "Recomendado" ou "Recomendado com Ressalvas" conforme as lacunas identificadas.
-"""
-
-            prompt_usuario += f"\n{diretriz_governanca}"
-            prompt_usuario += "\n\nEstruture a resposta com cabeçalhos '### 1. Hard Skills', etc., incluindo explicitamente os itens 'CARTA CENTRAL: [Nome da Carta] - [Texto]', 'CARTA NEGATIVA: [Nome da Carta] - [Texto]', 'CARTA POSITIVA: [Nome da Carta] - [Texto]' e 'RESUMO DA LEITURA: [Texto]', finalizando com '### CONCLUSÃO'. Não inclua linhas tracejadas (---)."
-
-            response = gemini_client.models.generate_content(
-                model="gemini-3.6-flash",
-                contents=prompt_usuario,
-                config=genai.types.GenerateContentConfig(
-                    system_instruction=SYSTEM_PROMPT_RH,
-                    temperature=0.3,
-                    max_output_tokens=8192,
-                ),
+            sucesso, texto_gerado, telemetria = gerar_analise_fase1(
+                c_nome or "Candidato",
+                c_vaga or "Geral",
+                st.session_state.get("candidato_nivel", "Nível"),
+                arq_ativo,
+                dados_casas,
             )
-            texto_gerado = response.text
-
-            tokens_in = getattr(response.usage_metadata, "prompt_token_count", 0)
-            tokens_out = getattr(response.usage_metadata, "candidates_token_count", 0)
-            custo_usd = (tokens_in * PRECO_ENTRADA_PER_TOKEN_USD) + (tokens_out * PRECO_SAIDA_PER_TOKEN_USD)
-            custo_brl = custo_usd * TAXA_CAMBIO_USD_BRL
+            if not sucesso:
+                st.error(texto_gerado)
+                return texto_gerado
 
             st.session_state[f"cost_{cache_key}"] = {
-                "tokens_in": tokens_in,
-                "tokens_out": tokens_out,
-                "tokens_total": tokens_in + tokens_out,
-                "custo_usd": custo_usd,
-                "custo_brl": custo_brl
+                "tokens_in": telemetria.get("input_tokens", 0),
+                "tokens_out": telemetria.get("output_tokens", 0),
+                "tokens_total": telemetria.get("total_tokens", 0),
+                "custo_usd": telemetria.get("custo_usd", 0),
+                "custo_brl": telemetria.get("custo_usd", 0) * TAXA_CAMBIO_USD_BRL
             }
 
             st.session_state[cache_key] = texto_gerado
@@ -1539,8 +1499,60 @@ with tab3:
 
     if st.button("Gerar Ficha de Avaliação Integrada", type="primary", key="btn_gerar_ficha_fase3"):
         with st.spinner("🤖 A IA está cruzando a Fase 1 (Tarot) com a Fase 2 (Astrologia) e redigindo a Deliberação Executiva..."):
+            pontuacoes_f1_btn = [st.session_state.get(f"t_pontos_{i}", 3) for i in range(1, 9)]
+            perc_f1_btn = (sum(pontuacoes_f1_btn) / 40.0) * 100
+            mandala_btn = st.session_state.get("mandala_calculada", {})
+            if mandala_btn:
+                itens_mandala_btn = list(mandala_btn.items())
+                soma_p_btn = sum(v["nota_base"] * v["peso"] for _, v in itens_mandala_btn)
+                soma_w_btn = sum(v["peso"] for _, v in itens_mandala_btn)
+                total_f2_btn = (soma_p_btn / soma_w_btn) * 12 if soma_w_btn > 0 else 48.0
+                perc_f2_btn = (total_f2_btn / 60.0) * 100
+            else:
+                perc_f2_btn = 80.0
+            indice_btn = (perc_f1_btn * 0.7) + (perc_f2_btn * 0.3)
+            sinal_btn = any(pontuacoes_f1_btn[i - 1] <= 2 for i in [6, 7, 8])
+            if indice_btn >= 80:
+                classificacao_btn = "Altamente Recomendado (Aderência Superior a 80%)"
+            elif indice_btn >= 65:
+                classificacao_btn = "Recomendado com Ressalvas (Aderência entre 65% e 79%)"
+            else:
+                classificacao_btn = "Não Recomendado (Abaixo de 65%: Riscos severos)"
+
+            notas_btn = {
+                nome: pontuacoes_f1_btn[idx]
+                for idx, nome in enumerate([
+                    "Hard Skills", "Soft Skills", "Fit Cultural", "Desafios",
+                    "Potencial Futuro", "Equilíbrio Emocional", "Saúde Psicológica",
+                    "Confiabilidade e Ética"
+                ])
+            }
+            forcas_btn = ", ".join(f"{nome} ({nota}/5)" for nome, nota in sorted(notas_btn.items(), key=lambda item: item[1], reverse=True)[:2])
+            atencoes_btn = ", ".join(f"{nome} ({nota}/5)" for nome, nota in sorted(notas_btn.items(), key=lambda item: item[1])[:2])
+
+            if GEMINI_API_DISPONIVEL:
+                sucesso_deliberacao, parecer_deliberacao, telemetria_deliberacao = gerar_deliberacao_fase3(
+                    st.session_state.get("candidato_nome", "Candidato(a)"),
+                    st.session_state.get("candidato_cargo", vaga_cargo),
+                    st.session_state.get("candidato_nivel", nivel_hierarquico),
+                    st.session_state.get("arq_utilizado", arq_nome),
+                    perc_f1_btn,
+                    perc_f2_btn,
+                    indice_btn,
+                    classificacao_btn,
+                    sinal_btn,
+                    forcas_btn,
+                    atencoes_btn,
+                )
+                if sucesso_deliberacao:
+                    st.session_state["parecer_tecnico"] = parecer_deliberacao
+                    st.session_state["telemetria_fase3"] = telemetria_deliberacao
+                else:
+                    st.session_state["parecer_tecnico"] = "Dossiê Integrado consolidado com sucesso!"
+                    st.error(parecer_deliberacao)
+            else:
+                st.session_state["parecer_tecnico"] = "Dossiê Integrado consolidado com sucesso!"
             st.session_state["ficha_gerada"] = True
-            st.session_state["parecer_tecnico"] = "Dossiê Integrado consolidado com sucesso!"
         st.success("Dossiê Integrado consolidado com sucesso!")
         st.rerun()
 
@@ -1605,21 +1617,13 @@ with tab3:
             st.write(f"Avaliação direcionada ao arquétipo **{arq_ativo_ficha}** para a posição de **{c_vaga}**. O cruzamento integra a análise comportamental e o ciclo conjuntural ativo de trânsitos, resultando em um **Índice Global de {indice_global:.1f}%** (*{classificacao}*).")
 
             texto_ia_laudo = obter_ou_gerar_analise_ia(c_nome, c_vaga, arq_ativo_ficha, sinal_vermelho=sinal_vermelho)
-            match_conclusao_laudo = re.search(
-                r"^(?:\s*(?:#{1,6}|\*\*)?\s*(?:\d+\.\s*)?(?:\*\*)?\s*CONCLUS[ÃA]O\s*(?:\*\*)?\s*:?(?:\s|$))(.*)$",
-                texto_ia_laudo,
-                re.DOTALL | re.IGNORECASE | re.MULTILINE,
+            texto_conclusao_f3 = st.session_state.get(
+                "parecer_tecnico",
+                f"O candidato apresenta um Índice Global de {indice_global:.1f}%, enquadrando-se na diretriz de "
+                f"'{classificacao}'. A avaliação cruza a base comportamental do Tarot (Fase 1: {perc_t1:.1f}%) "
+                f"com o mapa astrológico ponderado pelo arquétipo de {arq_ativo_ficha} e os trânsitos celestes correntes "
+                f"(Fase 2: {perc_t2:.1f}%)."
             )
-            if match_conclusao_laudo and len(match_conclusao_laudo.group(1).strip()) > 10:
-                texto_conclusao_f3 = match_conclusao_laudo.group(1).strip()
-                texto_conclusao_f3 = re.sub(r"^\s*[:\-–]\s*", "", texto_conclusao_f3)
-            else:
-                texto_conclusao_f3 = (
-                    f"O candidato apresenta um Índice Global de {indice_global:.1f}%, enquadrando-se na diretriz de "
-                    f"'{classificacao}'. A avaliação cruza a base comportamental do Tarot (Fase 1: {perc_t1:.1f}%) "
-                    f"com o mapa astrológico ponderado pelo arquétipo de {arq_ativo_ficha} e os trânsitos celestes correntes "
-                    f"(Fase 2: {perc_t2:.1f}%)."
-                )
 
             competencias_nomes = [
                 "Hard Skills", "Soft Skills", "Fit Cultural", 
