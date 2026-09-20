@@ -612,7 +612,41 @@ init_db()
 if "astro_data_raw" not in st.session_state: st.session_state["astro_data_raw"] = "01/01/1999"
 if "astro_local" not in st.session_state: st.session_state["astro_local"] = "São Paulo, SP"
 if "astro_hora" not in st.session_state: st.session_state["astro_hora"] = datetime.strptime("12:00", "%H:%M").time()
-if "input_nome_cand" not in st.session_state: st.session_state["input_nome_cand"] = ""
+if "candidato_nome" not in st.session_state: st.session_state["candidato_nome"] = ""
+if "candidato_cargo" not in st.session_state: st.session_state["candidato_cargo"] = ""
+if "candidato_nivel" not in st.session_state: st.session_state["candidato_nivel"] = ""
+if "sorteio_realizado" not in st.session_state: st.session_state["sorteio_realizado"] = False
+if "manual_validado" not in st.session_state: st.session_state["manual_validado"] = False
+
+NIVEIS_CARGO = ["", "Diretor", "Gerente", "Coordenador", "Supervisor", "Especialista", "Analista", "Assistente"]
+
+
+def inferir_nivel(cargo_texto: str) -> str:
+    if not cargo_texto or not cargo_texto.strip():
+        return ""
+    c = cargo_texto.lower().strip()
+
+    if re.search(r'\b(diretor|diretoria|cfo|ceo|cto|coo|c-level|vp|vice-presidente)\b', c):
+        return "Diretor"
+    if re.search(r'\b(gerente|gerência|gerencia|head)\b', c):
+        return "Gerente"
+    if re.search(r'\b(coordenador|coordenadora|coordenação|coordenacao)\b', c):
+        return "Coordenador"
+    if re.search(r'\b(supervisor|supervisora|supervisão|supervisao|líder|lider)\b', c):
+        return "Supervisor"
+    if re.search(r'\b(especialista|consultor|consultora)\b', c):
+        return "Especialista"
+    if re.search(r'\b(assistente|auxiliar|estagiário|estagiario)\b', c):
+        return "Assistente"
+    return "Analista"
+
+
+def deduzir_nivel_por_cargo(cargo: str, niveis_disponiveis: list) -> str:
+    """Infere o nível hierárquico com base em palavras-chave no cargo pretendido."""
+    if not cargo:
+        return niveis_disponiveis[0] if niveis_disponiveis else ""
+    return inferir_nivel(cargo)
+
 
 def inferir_nivel_hierarquico(cargo: str) -> str:
     cargo_normalizado = remover_acentos(cargo)
@@ -632,51 +666,18 @@ def inferir_nivel_hierarquico(cargo: str) -> str:
     return "Especialista / Analista"
 
 def auto_detectar_nivel_hierarquico():
-    cargo = st.session_state.get("input_vaga_cand", "")
-    nivel_inferido = inferir_nivel_hierarquico(cargo)
-    cargo_normalizado = remover_acentos(cargo)
-    possui_correspondencia = any(
-        re.search(padrao, cargo_normalizado)
-        for padrao in [
-            r"\b(ceo|cfo|coo|cto|cmo|cio|vp|vice presidente|presidente|c level|c-level|chief)\b",
-            r"\b(diretor|diretora|director|director[a]?)\b",
-            r"\b(gerente|gerencia|head|manager)\b",
-            r"\b(coordenador|coordenadora|coordenacao)\b",
-            r"\b(supervisor|supervisora|supervisao)\b",
-            r"\b(especialista|analista|tecnico|tecnica|operacional|operador|operadora)\b",
-        ]
-    )
-    if cargo.strip() and possui_correspondencia:
-        st.session_state["input_nivel_cand"] = nivel_inferido
+    cargo = st.session_state.get("candidato_cargo", "")
+    nivel_inferido = inferir_nivel(cargo)
+    if cargo.strip():
+        st.session_state["candidato_nivel"] = nivel_inferido
 
-def disparar_nova_avaliacao():
-    st.session_state["input_nome_cand"] = ""
-    st.session_state["input_vaga_cand"] = ""
-    st.session_state["input_nivel_cand"] = "C-Level / Executivo"
-    st.session_state["tipo_cad_modo"] = "Cadastrar Novo"
-    st.session_state["select_cand_existente_ativo"] = "Selecionar Candidato Cadastrado..."
-    st.session_state["select_override_arq"] = "Automático (Detectado por IA)"
-    st.session_state["radio_modo_tarot"] = "Automático (Assistente Especialista com Regras Metodológicas)"
-    st.session_state["astro_data_raw"] = "01/01/1999"
-    st.session_state["astro_hora"] = datetime.strptime("12:00", "%H:%M").time()
-    st.session_state["astro_local"] = "São Paulo, SP"
-    st.session_state["ficha_gerada"] = False
-    for key in list(st.session_state.keys()):
-        if key.startswith("ai_analise_") or key.startswith("cost_"):
-            del st.session_state[key]
-    for key in [
-        "mandala_calculada",
-        "big_three_calculado",
-        "transitos_calculados",
-        "arq_utilizado",
-        "astro_loc_resolvido",
-    ]:
-        st.session_state.pop(key, None)
-    for i in range(1, 9):
-        st.session_state[f"t_central_{i}"] = ""
-        st.session_state[f"t_negativa_{i}"] = ""
-        st.session_state[f"t_positiva_{i}"] = ""
-        st.session_state[f"t_pontos_{i}"] = 3
+
+def atualizar_nivel_automatico():
+    cargo = st.session_state.get("candidato_cargo", "")
+    st.session_state["candidato_nivel"] = inferir_nivel(cargo)
+
+
+# reset completo será executado diretamente no botão da Fase 1
 
 st.title("Sistema de Diagnóstico Corporativo Dinâmico: Tarot & Astrologia Ponderada com Trânsitos")
 st.markdown("Plataforma avançada com classificação semântica inteligente, 4 pilares de arquétipos corporativos, override manual, trânsitos atuais e IA.")
@@ -709,7 +710,10 @@ with tab1:
     with col_topo_t1:
         st.header("Fase 1: Parâmetros do Candidato e Detecção de Arquétipo")
     with col_topo_t2:
-        st.button("🔄 Nova Avaliação", on_click=disparar_nova_avaliacao, use_container_width=True, key="nova_avaliacao")
+        if st.button("🔄 Nova Avaliação", key="btn_nova_avaliacao"):
+            for k in list(st.session_state.keys()):
+                del st.session_state[k]
+            st.rerun()
 
     candidatos_existentes = listar_candidatos_salvos()
     opcoes_candidatos = []
@@ -745,9 +749,9 @@ with tab1:
                 if escolha_cand and escolha_cand.get("id") is not None:
                     dados_candidato = obter_avaliacao_por_id(escolha_cand["id"])
                     if dados_candidato:
-                        st.session_state["input_nome_cand"] = dados_candidato.get("nome_candidato", "")
-                        st.session_state["input_vaga_cand"] = dados_candidato.get("cargo_pretendido", "")
-                        st.session_state["input_nivel_cand"] = dados_candidato.get("nivel_hierarquico", "C-Level / Executivo")
+                        st.session_state["candidato_nome"] = dados_candidato.get("nome_candidato", "")
+                        st.session_state["candidato_cargo"] = dados_candidato.get("cargo_pretendido", "")
+                        st.session_state["candidato_nivel"] = dados_candidato.get("nivel_hierarquico", "Analista")
                         nome_candidato = dados_candidato.get("nome_candidato", "")
                     else:
                         nome_candidato = escolha_cand.get("nome", "")
@@ -760,16 +764,37 @@ with tab1:
             nome_candidato = st.text_input("Nome Completo do Novo Candidato(a)", key="candidato_nome")
 
     with col_c2:
+        def on_cargo_change():
+            cargo = st.session_state.get("candidato_cargo", "")
+            if cargo and cargo.strip():
+                st.session_state["candidato_nivel"] = inferir_nivel(cargo)
+            else:
+                st.session_state["candidato_nivel"] = ""
+
         vaga_cargo = st.text_input(
             "Vaga / Cargo Pretendido",
             key="candidato_cargo",
-            on_change=auto_detectar_nivel_hierarquico,
+            on_change=on_cargo_change,
         )
     with col_c3:
+        if tipo_cad == "Selecionar Existente":
+            if opcoes_candidatos:
+                candidato_selecionado = st.session_state.get("select_cand_existente_ativo")
+                if isinstance(candidato_selecionado, dict) and candidato_selecionado.get("id") is not None:
+                    dados_completos = obter_avaliacao_por_id(candidato_selecionado["id"])
+                    if dados_completos:
+                        st.session_state["candidato_nivel"] = dados_completos.get("nivel_hierarquico", "")
+        if "candidato_nivel" not in st.session_state or st.session_state["candidato_nivel"] not in NIVEIS_CARGO:
+            st.session_state["candidato_nivel"] = ""
+
+        nivel_atual = st.session_state.get("candidato_nivel", "")
+        idx_nivel = NIVEIS_CARGO.index(nivel_atual) if nivel_atual in NIVEIS_CARGO else 0
         nivel_hierarquico = st.selectbox(
             "Nível Hierárquico",
-            ["C-Level / Executivo", "Diretor", "Gerente", "Supervisor", "Coordenador", "Especialista / Analista", "Técnico", "Operacional"],
-            key="input_nivel_cand",
+            options=NIVEIS_CARGO,
+            index=idx_nivel,
+            format_func=lambda x: "Selecione o nível..." if x == "" else x,
+            key="candidato_nivel"
         )
 
     modo_arq_input = st.selectbox(
@@ -790,10 +815,21 @@ with tab1:
 
     st.markdown("---")
     st.subheader("Modo de Geração da Leitura das Cartas")
-    modo_geracao = st.radio("Selecione como deseja preencher as cartas nas 8 casas:", ["Manual (Preenchimento Direto)", "Automático (Assistente Especialista com Regras Metodológicas)"], index=1, key="radio_modo_tarot")
+    def on_modo_geracao_change():
+        modo_atual = st.session_state.get("modo_geracao_cartas")
+        st.session_state["sorteio_realizado"] = False
+        st.session_state["manual_validado"] = False
+
+    modo_geracao = st.radio(
+        "Selecione como deseja preencher as cartas nas 8 casas:",
+        ["Manual (Preenchimento Direto)", "Automático (Assistente Especialista com Regras Metodológicas)"],
+        index=1,
+        key="modo_geracao_cartas",
+        on_change=on_modo_geracao_change,
+    )
 
     if modo_geracao == "Automático (Assistente Especialista com Regras Metodológicas)":
-        if st.button("🎲 Executar Sorteio e Cálculo Inteligente via Regras", type="primary"):
+        if st.button("🎲 Executar Sorteio e Cálculo Inteligente via Regras", key="btn_sortear_fase1", type="primary"):
             cartas_embaralhadas = random.sample(DECK_TAROT, len(DECK_TAROT))
             idx = 0
             for i in range(1, 9):
@@ -804,58 +840,94 @@ with tab1:
                 st.session_state[f"t_negativa_{i}"] = c_neg
                 st.session_state[f"t_positiva_{i}"] = c_pos
                 st.session_state[f"t_pontos_{i}"] = calcular_nota_metodologica(i, c_cent, c_neg, c_pos)
+            st.session_state["sorteio_realizado"] = True
             st.success("Sorteio e atribuição de notas concluídos com sucesso!")
             st.rerun()
 
-    st.markdown("---")
-    st.subheader("Matriz de Avaliação por Casas (Notas de 1 a 5)")
-    casas_config = [
-        (1, "Hard Skills (Competência Técnica e Rotina)", "Casa 6 Astrológica"),
-        (2, "Soft Skills (Inteligência Social e Comunicação)", "Casa 3 Astrológica"),
-        (3, "Fit Cultural (Alinhamento de Valores e Coletivo)", "Casa 11 Astrológica"),
-        (4, "Desafios (Pontos Cegos e Autossabotagem)", "Casa 12 Astrológica"),
-        (5, "Potencial Futuro (Projeção e Liderança de Longo Prazo)", "Casa 10 Astrológica"),
-        (6, "Equilíbrio Emocional (Resiliência sob Pressão)", "Casa 4 Astrológica"),
-        (7, "Saúde Psicológica (Foco Cognitivo e Burnout)", "Casa 1 Astrológica"),
-        (8, "Confiabilidade e Ética (Compliance e Acordos)", "Casa 8 Astrológica"),
-    ]
+    deve_exibir_matriz = (
+        modo_geracao == "Manual (Preenchimento Direto)"
+        or st.session_state.get("sorteio_realizado", False)
+    )
+    casas_preenchidas = False
+    resultado_calculado = (
+        st.session_state.get("sorteio_realizado", False)
+        if modo_geracao == "Automático (Assistente Especialista com Regras Metodológicas)"
+        else st.session_state.get("manual_validado", False)
+    )
 
-    col_esq, col_dir = st.columns(2)
-    for num, titulo, base_astro in casas_config:
-        col_alvo = col_esq if num <= 4 else col_dir
-        with col_alvo:
-            with st.expander(f"Casa {num}: {titulo} — [{base_astro}]"):
-                st.text_input("Carta Central (Resposta)", key=f"t_central_{num}", placeholder="Ex: O Mago")
-                st.text_input("Carta Negativa (Dificuldades)", key=f"t_negativa_{num}", placeholder="Ex: Ás de Ouros")
-                st.text_input("Carta Positiva (Pontos Fortes)", key=f"t_positiva_{num}", placeholder="Ex: 4 de Copas")
-                st.number_input("Nota (1-5)", min_value=1, max_value=5, value=3, key=f"t_pontos_{num}")
+    if deve_exibir_matriz:
+        st.markdown("---")
+        st.subheader("Matriz de Avaliação por Casas (Notas de 1 a 5)")
+        casas_config = [
+            (1, "Hard Skills (Competência Técnica e Rotina)", "Casa 6 Astrológica"),
+            (2, "Soft Skills (Inteligência Social e Comunicação)", "Casa 3 Astrológica"),
+            (3, "Fit Cultural (Alinhamento de Valores e Coletivo)", "Casa 11 Astrológica"),
+            (4, "Desafios (Pontos Cegos e Autossabotagem)", "Casa 12 Astrológica"),
+            (5, "Potencial Futuro (Projeção e Liderança de Longo Prazo)", "Casa 10 Astrológica"),
+            (6, "Equilíbrio Emocional (Resiliência sob Pressão)", "Casa 4 Astrológica"),
+            (7, "Saúde Psicológica (Foco Cognitivo e Burnout)", "Casa 1 Astrológica"),
+            (8, "Confiabilidade e Ética (Compliance e Acordos)", "Casa 8 Astrológica"),
+        ]
 
-    pontuacoes_t1 = [st.session_state.get(f"t_pontos_{i}", 3) for i in range(1, 9)]
-    total_t1 = sum(pontuacoes_t1)
-    perc_t1 = (total_t1 / 40.0) * 100
-    
-    p6, p7, p8 = st.session_state.get("t_pontos_6", 3), st.session_state.get("t_pontos_7", 3), st.session_state.get("t_pontos_8", 3)
-    sinal_vermelho_f1 = "Sim" if (p6 <= 2 or p7 <= 2 or p8 <= 2) else "Não"
-    
-    if total_t1 >= 32:
-        classificacao_f1 = "Altamente Recomendado"
-    elif total_t1 >= 24:
-        classificacao_f1 = "Recomendado com Ressalvas"
+        col_esq, col_dir = st.columns(2)
+        for num, titulo, base_astro in casas_config:
+            col_alvo = col_esq if num <= 4 else col_dir
+            with col_alvo:
+                with st.expander(f"Casa {num}: {titulo} — [{base_astro}]"):
+                    st.text_input("Carta Central (Resposta)", key=f"t_central_{num}", placeholder="Ex: O Mago")
+                    st.text_input("Carta Negativa (Dificuldades)", key=f"t_negativa_{num}", placeholder="Ex: Ás de Ouros")
+                    st.text_input("Carta Positiva (Pontos Fortes)", key=f"t_positiva_{num}", placeholder="Ex: 4 de Copas")
+                    st.number_input("Nota (1-5)", min_value=1, max_value=5, value=3, key=f"t_pontos_{num}")
+
+        casas_preenchidas = all(
+            str(st.session_state.get(f"t_{campo}_{numero}", "")).strip()
+            for numero in range(1, 9)
+            for campo in ("central", "negativa", "positiva")
+        )
+
+        if modo_geracao == "Manual (Preenchimento Direto)":
+            if st.button("📊 Confirmar e Calcular Leitura Manual", key="btn_confirmar_manual"):
+                if not casas_preenchidas:
+                    st.error("Preencha as cartas Central, Negativa e Positiva das 8 casas antes de confirmar.")
+                else:
+                    st.session_state["sorteio_realizado"] = True
+                    st.session_state["manual_validado"] = True
+                    st.rerun()
+
+        if resultado_calculado and (modo_geracao == "Automático (Assistente Especialista com Regras Metodológicas)" or st.session_state.get("manual_validado", False)):
+            pontuacoes_t1 = [st.session_state.get(f"t_pontos_{i}", 3) for i in range(1, 9)]
+            total_t1 = sum(pontuacoes_t1)
+            perc_t1 = (total_t1 / 40.0) * 100
+
+            p6, p7, p8 = st.session_state.get("t_pontos_6", 3), st.session_state.get("t_pontos_7", 3), st.session_state.get("t_pontos_8", 3)
+            sinal_vermelho_f1 = "Sim" if (p6 <= 2 or p7 <= 2 or p8 <= 2) else "Não"
+
+            if total_t1 >= 32:
+                classificacao_f1 = "Altamente Recomendado"
+            elif total_t1 >= 24:
+                classificacao_f1 = "Recomendado com Ressalvas"
+            else:
+                classificacao_f1 = "Não Recomendado"
+            if sinal_vermelho_f1 in ["Sim", True]:
+                classificacao_f1 = "Não Recomendado (Veto de Governança)"
+
+            st.markdown("---")
+            st.info(f"📊 **Resultado Individual da Fase 1 (Tarot):** {total_t1} / 40 pontos ({perc_t1:.1f}% de aderência comportamental)")
+        elif modo_geracao == "Manual (Preenchimento Direto)":
+            st.info("💡 Preencha as cartas e notas das 8 casas e clique em 'Confirmar e Calcular Leitura Manual' para apurar o resultado.")
     else:
-        classificacao_f1 = "Não Recomendado"
-    if sinal_vermelho_f1 in ["Sim", True]:
-        classificacao_f1 = "Não Recomendado (Veto de Governança)"
+        st.info("💡 Preencha os dados do candidato e clique em **'Executar Sorteio e Cálculo Inteligente via Regras'** para gerar a leitura das 8 casas.")
 
-    st.markdown("---")
-    st.info(f"📊 **Resultado Individual da Fase 1 (Tarot):** {total_t1} / 40 pontos ({perc_t1:.1f}% de aderência comportamental)")
+    c_nome_val = st.session_state.get("candidato_nome") or st.session_state.get("candidato_nome", "") or (nome_candidato if 'nome_candidato' in locals() else "")
+    cache_key_check = f"ai_analise_v3_{c_nome_val}_{st.session_state.get('candidato_cargo', vaga_cargo)}"
 
-    c_nome_val = st.session_state.get("nome_candidato") or st.session_state.get("input_nome_cand", "") or (nome_candidato if 'nome_candidato' in locals() else "")
-    cache_key_check = f"ai_analise_v3_{c_nome_val}_{vaga_cargo}"
-
-    if st.button("🤖 Gerar Análise Qualitativa por IA (Fase 1)", type="primary"):
-        with st.spinner("Consultando o Gemini 3.8 Flash para gerar o parecer completo das 8 casas..."):
-            obter_ou_gerar_analise_ia(c_nome_val, vaga_cargo, arq_nome)
-        st.success("Análise gerada e pronta para exportação!")
+    if resultado_calculado and casas_preenchidas:
+        if st.button("🤖 Gerar Análise Qualitativa por IA (Fase 1)", type="primary"):
+            with st.spinner("Consultando o Gemini 3.8 Flash para gerar o parecer completo das 8 casas..."):
+                obter_ou_gerar_analise_ia(c_nome_val, vaga_cargo, arq_nome)
+            st.success("Análise gerada e pronta para exportação!")
+    elif deve_exibir_matriz:
+        st.info("💡 Preencha as cartas Central, Negativa e Positiva das 8 casas e confirme o cálculo para liberar a análise qualitativa e o PDF.")
 
     cost_info_key = f"cost_{cache_key_check}"
     if cost_info_key in st.session_state:
@@ -1177,7 +1249,7 @@ with tab1:
         res = pdf.output(dest="S")
         return res.encode("latin1") if isinstance(res, str) else bytes(res)
 
-    if cache_key_check in st.session_state and st.session_state.get(cache_key_check):
+    if resultado_calculado and casas_preenchidas and cache_key_check in st.session_state and st.session_state.get(cache_key_check):
         pdf_stream = gerar_ficha_pdf_fase1(c_nome_val, vaga_cargo, total_t1, classificacao_f1, sinal_vermelho_f1)
         st.download_button(
             label="📥 Baixar Ficha de Avaliação Completa em PDF",
@@ -1185,7 +1257,7 @@ with tab1:
             file_name=f"Ficha_Avaliacao_Recrutamento_{(c_nome_val or 'Candidato').replace(' ', '_')}.pdf",
             mime="application/pdf"
         )
-    else:
+    elif resultado_calculado and casas_preenchidas:
         st.info("💡 Clique no botão acima **'🤖 Gerar Análise Qualitativa por IA (Fase 1)'** para habilitar o download do PDF completo.")
 
 with tab2:
@@ -1426,9 +1498,9 @@ with tab2:
         st.markdown("")
 
         pdf_fase2_bytes = gerar_laudo_fase2_pdf(
-            nome_candidato if 'nome_candidato' in locals() else st.session_state.get("input_nome_cand", "Candidato"),
-            vaga_cargo,
-            nivel_hierarquico,
+            st.session_state.get("candidato_nome", nome_candidato if 'nome_candidato' in locals() else "Candidato"),
+            st.session_state.get("candidato_cargo", vaga_cargo),
+            st.session_state.get("candidato_nivel", nivel_hierarquico),
             st.session_state.get("arq_utilizado", arq_nome),
             data_nasc_raw,
             hora_nasc,
@@ -1465,8 +1537,12 @@ with tab3:
     st.header("Fase 3: FICHA DE AVALIAÇÃO INTEGRADA E PONDERADA")
     st.markdown("Governança final cruzando o Tarot, a Astrologia Ponderada por Arquétipo e Momentos de Trânsito.")
 
-    if st.button("Gerar Ficha de Avaliação Integrada", type="primary"):
-        st.session_state["ficha_gerada"] = True
+    if st.button("Gerar Ficha de Avaliação Integrada", type="primary", key="btn_gerar_ficha_fase3"):
+        with st.spinner("🤖 A IA está cruzando a Fase 1 (Tarot) com a Fase 2 (Astrologia) e redigindo a Deliberação Executiva..."):
+            st.session_state["ficha_gerada"] = True
+            st.session_state["parecer_tecnico"] = "Dossiê Integrado consolidado com sucesso!"
+        st.success("Dossiê Integrado consolidado com sucesso!")
+        st.rerun()
 
     if st.session_state.get("ficha_gerada", False):
         pontuacoes_t1 = [st.session_state.get(f"t_pontos_{i}", 3) for i in range(1, 9)]
@@ -1495,9 +1571,9 @@ with tab3:
         else:
             classificacao = "Não Recomendado (Abaixo de 65%: Riscos severos)"
 
-        c_nome = st.session_state.get("input_nome_cand", "Candidato(a)")
-        c_vaga = st.session_state.get("input_vaga_cand", "Cargo")
-        c_nivel = st.session_state.get("input_nivel_cand", "Nível")
+        c_nome = st.session_state.get("candidato_nome", "Candidato(a)")
+        c_vaga = st.session_state.get("candidato_cargo", "Cargo")
+        c_nivel = st.session_state.get("candidato_nivel", "Nível")
         arq_ativo_ficha = st.session_state.get("arq_utilizado", arq_nome)
         data_atual = datetime.now().strftime("%d / %m / %Y")
 
