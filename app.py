@@ -27,10 +27,12 @@ from core.constants import (
     FAIXAS_DELIBERACAO,
     COMPETENCIAS_FASE_1,
 )
+from services.database_service import init_db, salvar_avaliacao, listar_candidatos_salvos, obter_avaliacao_por_id
 # Configuração inicial da página
 st.set_page_config(
     page_title="Sistema de Diagnóstico Corporativo Dinâmico - RH", layout="wide"
 )
+init_db()
 
 st.markdown(
     """
@@ -605,50 +607,7 @@ def calcular_nota_metodologica(casa_num, c_cent, c_neg, c_pos):
         if nota_base > 1: nota_base -= 1
     return max(1, min(5, nota_base))
 
-def inicializar_banco():
-    with sqlite3.connect("rh_diagnostico_dinamico.db") as conn:
-        cursor = conn.cursor()
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS avaliacoes (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                nome TEXT,
-                vaga TEXT,
-                nivel TEXT,
-                data TEXT,
-                pontos INTEGER,
-                classificacao TEXT,
-                sinal_vermelho TEXT,
-                arquétipo TEXT,
-                tokens_in INTEGER DEFAULT 0,
-                tokens_out INTEGER DEFAULT 0,
-                custo_brl REAL DEFAULT 0.0
-            )
-        """)
-        cursor.execute("PRAGMA table_info(avaliacoes)")
-        colunas = [col[1] for col in cursor.fetchall()]
-        if "tokens_in" not in colunas:
-            cursor.execute("ALTER TABLE avaliacoes ADD COLUMN tokens_in INTEGER DEFAULT 0")
-        if "tokens_out" not in colunas:
-            cursor.execute("ALTER TABLE avaliacoes ADD COLUMN tokens_out INTEGER DEFAULT 0")
-        if "custo_brl" not in colunas:
-            cursor.execute("ALTER TABLE avaliacoes ADD COLUMN custo_brl REAL DEFAULT 0.0")
-        conn.commit()
-
-inicializar_banco()
-
-def salvar_no_banco(nome, vaga, nivel, data, pontos, classificacao, sinal_vermelho, arq, tokens_in=0, tokens_out=0, custo_brl=0.0):
-    if not nome or not nome.strip() or nome.strip() in ["Candidato(a)", "Selecionar Candidato Cadastrado..."]: return False
-    with sqlite3.connect("rh_diagnostico_dinamico.db") as conn:
-        cursor = conn.cursor()
-        cursor.execute(
-            """
-            INSERT INTO avaliacoes (nome, vaga, nivel, data, pontos, classificacao, sinal_vermelho, arquétipo, tokens_in, tokens_out, custo_brl)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            (nome.strip(), vaga, nivel, data, pontos, classificacao, sinal_vermelho, arq, tokens_in, tokens_out, custo_brl),
-        )
-        conn.commit()
-    return True
+init_db()
 
 if "astro_data_raw" not in st.session_state: st.session_state["astro_data_raw"] = "01/01/1999"
 if "astro_local" not in st.session_state: st.session_state["astro_local"] = "São Paulo, SP"
@@ -752,29 +711,58 @@ with tab1:
     with col_topo_t2:
         st.button("🔄 Nova Avaliação", on_click=disparar_nova_avaliacao, use_container_width=True, key="nova_avaliacao")
 
-    with sqlite3.connect("rh_diagnostico_dinamico.db") as conn_db:
-        cursor_db = conn_db.cursor()
-        cursor_db.execute("SELECT DISTINCT nome FROM avaliacoes")
-        candidatos_existentes = [row[0] for row in cursor_db.fetchall() if row[0]]
+    candidatos_existentes = listar_candidatos_salvos()
+    opcoes_candidatos = []
+    for candidato in candidatos_existentes:
+        nome = candidato.get("nome_candidato", "")
+        cargo = candidato.get("cargo_pretendido", "")
+        indice = candidato.get("indice_global", 0.0)
+        if nome:
+            opcoes_candidatos.append({
+                "id": candidato.get("id"),
+                "label": f"{candidato.get('id')} - {nome} | {cargo} (Índice: {indice:.1f}%)",
+                "nome": nome,
+                "cargo": cargo,
+                "nivel": candidato.get("nivel_hierarquico", ""),
+                "payload": candidato.get("payload", {})
+            })
 
     tipo_cad = st.radio("Modo de Candidato", ["Selecionar Existente", "Cadastrar Novo"], index=1, horizontal=True, key="tipo_cad_modo")
 
     col_c1, col_c2, col_c3 = st.columns(3)
     with col_c1:
         if tipo_cad == "Selecionar Existente":
-            if candidatos_existentes:
-                escolha_cand = st.selectbox("Candidato(a) Registrado", ["Selecionar Candidato Cadastrado..."] + candidatos_existentes, key="select_cand_existente_ativo")
-                nome_candidato = escolha_cand if escolha_cand != "Selecionar Candidato Cadastrado..." else ""
+            if opcoes_candidatos:
+                opcoes_select = [
+                    {"id": None, "label": "Selecionar Candidato Cadastrado...", "nome": "", "cargo": "", "nivel": "", "payload": {}}
+                ] + opcoes_candidatos
+                escolha_cand = st.selectbox(
+                    "Candidato(a) Registrado",
+                    options=opcoes_select,
+                    format_func=lambda item: item["label"] if item else "Selecionar Candidato Cadastrado...",
+                    key="select_cand_existente_ativo",
+                )
+                if escolha_cand and escolha_cand.get("id") is not None:
+                    dados_candidato = obter_avaliacao_por_id(escolha_cand["id"])
+                    if dados_candidato:
+                        st.session_state["input_nome_cand"] = dados_candidato.get("nome_candidato", "")
+                        st.session_state["input_vaga_cand"] = dados_candidato.get("cargo_pretendido", "")
+                        st.session_state["input_nivel_cand"] = dados_candidato.get("nivel_hierarquico", "C-Level / Executivo")
+                        nome_candidato = dados_candidato.get("nome_candidato", "")
+                    else:
+                        nome_candidato = escolha_cand.get("nome", "")
+                else:
+                    nome_candidato = ""
             else:
                 st.info("Nenhum candidato registrado.")
                 nome_candidato = ""
         else:
-            nome_candidato = st.text_input("Nome Completo do Novo Candidato(a)", key="input_nome_cand")
+            nome_candidato = st.text_input("Nome Completo do Novo Candidato(a)", key="candidato_nome")
 
     with col_c2:
         vaga_cargo = st.text_input(
             "Vaga / Cargo Pretendido",
-            key="input_vaga_cand",
+            key="candidato_cargo",
             on_change=auto_detectar_nivel_hierarquico,
         )
     with col_c3:
@@ -1608,22 +1596,27 @@ with tab3:
                 )
             with col_a2:
                 if st.button("💾 Salvar no Banco Dinâmico (SQLite)", use_container_width=True, key="salvar_sqlite"):
-                    if c_nome in ["", "Candidato(a)"]:
-                        st.error("Informe um nome de candidato válido.")
+                    dados_para_salvar = {
+                        "nome": st.session_state.get("candidato_nome", ""),
+                        "cargo": st.session_state.get("candidato_cargo", ""),
+                        "nivel": st.session_state.get("candidato_nivel", ""),
+                        "arquetipo": st.session_state.get("arquetipo_ativo", ""),
+                        "pontuacao_fase1": st.session_state.get("pontuacao_fase1", 0.0),
+                        "aderencia_fase1": st.session_state.get("aderencia_fase1", 0.0),
+                        "pontuacao_fase2": st.session_state.get("pontuacao_fase2", 0.0),
+                        "aderencia_fase2": st.session_state.get("aderencia_fase2", 0.0),
+                        "indice_global": st.session_state.get("indice_global", 0.0),
+                        "classificacao": st.session_state.get("classificacao_final", ""),
+                        "sinal_vermelho": st.session_state.get("sinal_vermelho", False),
+                        "parecer_tecnico": st.session_state.get("parecer_tecnico", ""),
+                        "notas_casas": st.session_state.get("notas_casas", {}),
+                    }
+                    
+                    sucesso, mensagem = salvar_avaliacao(dados_para_salvar)
+                    if sucesso:
+                        st.success(mensagem)
                     else:
-                        key_cost_f3 = f"cost_ai_analise_{c_nome}_{c_vaga}"
-                        audit_dict = st.session_state.get(key_cost_f3, {})
-                        t_in = audit_dict.get("tokens_in", 0)
-                        t_out = audit_dict.get("tokens_out", 0)
-                        c_brl = audit_dict.get("custo_brl", 0.0)
-
-                        ok = salvar_no_banco(
-                            c_nome, vaga_cargo, nivel_hierarquico, data_atual,
-                            int(indice_global), classificacao, sinal_vermelho, arq_ativo_ficha,
-                            tokens_in=t_in, tokens_out=t_out, custo_brl=c_brl
-                        )
-                        if ok:
-                            st.success("✅ Salvo com sucesso no banco de dados!")
+                        st.error(mensagem)
 
         with sub_t2:
             st.markdown("### Cruzamento entre Tarot, Arquétipo e Trânsitos")
