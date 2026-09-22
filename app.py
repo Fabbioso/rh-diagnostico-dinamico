@@ -328,12 +328,16 @@ def extrair_secao_competencia(texto_ia, pos_num, nome_comp):
         return ""
     
     padroes_secao = [
-        rf"(?:#{{1,6}}\s*)?\[?\s*CASA\s*{pos_num}\s*:\s*{re.escape(nome_comp)}\s*\]?",
-        rf"(?:###?\s*)?(?:{pos_num}\.|\b{pos_num}\b)\s*{re.escape(nome_comp)}",
-        rf"Casa\s*{pos_num}\s*:\s*{re.escape(nome_comp)}",
-        rf"(?:{pos_num}\.|\b{pos_num}\b)\s*{re.escape(nome_comp)}"
+        rf"(?:#{1,6}\s*)?\[?\s*CASA\s*{pos_num}\s*:[^\n]*{re.escape(nome_comp)}[^\n]*\]?",
+        rf"(?:#{1,6}\s*)?(?:{pos_num}\.|\b{pos_num}\b)[^\n]*{re.escape(nome_comp)}[^\n]*",
+        rf"Casa\s*{pos_num}\s*:[^\n]*{re.escape(nome_comp)}[^\n]*",
+        rf"(?:#{1,6}\s*)?(?:{pos_num}\.|\b{pos_num}\b)[^\n]*(?:Desafio|Crise)[^\n]*",
+        rf"(?:#{1,6}\s*)?\[?\s*CASA\s*{pos_num}\s*:[^\n]*",
+        rf"(?:#{1,6}\s*)?(?:{pos_num}\.|\b{pos_num}\b)\s+[A-Za-zÀ-ÿ][^\n]*",
+        rf"Casa\s*{pos_num}\s*:[^\n]*",
+        rf"(?:#{1,6}\s*)?(?:{pos_num}\.|\b{pos_num}\b)\s*{re.escape(nome_comp)}",
     ]
-    
+
     cabecalho_conclusao = r"^(?:\s*(?:#{1,6}|\*\*)?\s*(?:\d+\.\s*)?(?:\*\*)?\s*CONCLUS[ÃA]O\s*(?:\*\*)?\s*:?(?:\s|$))"
     proximos_marcadores = [
         r"(?:#{1,6}\s*)?\[?\s*CASA\s*\d+\s*:",
@@ -1121,16 +1125,18 @@ with tab1:
             cartas_str = f"Carta Central: {c_cent}  |  Carta Negativa: {c_neg}  |  Carta Positiva: {c_pos}"
             conteudo_comp = extrair_secao_competencia(texto_ia_doc, i, competencias_nomes[i-1])
 
-            dados_competencia = st.session_state.get(f"analise_fase1_casa_{i}")
-            if not dados_competencia:
-                dados_competencia = extrair_descricao_competencia(texto_ia_doc, i, competencias_nomes[i-1])
-                desc_central = remover_nome_carta_descricao(dados_competencia.get("central", ""), c_cent)
-                desc_negativa = remover_nome_carta_descricao(dados_competencia.get("negativa", ""), c_neg)
-                desc_positiva = remover_nome_carta_descricao(dados_competencia.get("positiva", ""), c_pos)
-            else:
-                desc_central = dados_competencia.get("central_desc", "")
-                desc_negativa = dados_competencia.get("negativa_desc", "")
-                desc_positiva = dados_competencia.get("positiva_desc", "")
+        dados_competencia = st.session_state.get(f"analise_fase1_casa_{i}")
+        tem_conteudo = bool(dados_competencia and any(str(dados_competencia.get(k, "")).strip() for k in ["central_desc", "negativa_desc", "positiva_desc", "resumo"]))
+        if not tem_conteudo:
+            dados_competencia = extrair_descricao_competencia(texto_ia_doc, i, competencias_nomes[i-1])
+            desc_central = remover_nome_carta_descricao(dados_competencia.get("central", ""), c_cent)
+            desc_negativa = remover_nome_carta_descricao(dados_competencia.get("negativa", ""), c_neg)
+            desc_positiva = remover_nome_carta_descricao(dados_competencia.get("positiva", ""), c_pos)
+            resumo = dados_competencia.get("resumo", "")
+        else:
+            desc_central = dados_competencia.get("central_desc", "") or remover_nome_carta_descricao(dados_competencia.get("central", ""), c_cent)
+            desc_negativa = dados_competencia.get("negativa_desc", "") or remover_nome_carta_descricao(dados_competencia.get("negativa", ""), c_neg)
+            desc_positiva = dados_competencia.get("positiva_desc", "") or remover_nome_carta_descricao(dados_competencia.get("positiva", ""), c_pos)
             resumo = dados_competencia.get("resumo", "")
 
             blocos_parsed = []
@@ -1198,11 +1204,16 @@ with tab1:
                 "Riscos críticos em bases emocionais, psíquicas ou éticas representam ponto de ruptura para a governança da posição."
             )
         elif match_conclusao and len(match_conclusao.group(1).strip()) > 10:
+            raw_c = match_conclusao.group(1).strip()
+            raw_c = re.sub(r"^(?:E\s+)?RECOMENDA[ÇC][ÃA]O\s+FINAL\s*", "", raw_c, flags=re.IGNORECASE).strip()
+            raw_c = re.sub(r"^PARECER\s+FINAL\s*:[^\n]+\n*", "", raw_c, flags=re.IGNORECASE).strip()
+            raw_c = re.sub(r"^JUSTIFICATIVA\s+EXECUTIVA\s*:\s*", "", raw_c, flags=re.IGNORECASE).strip()
+            raw_c = re.sub(r"\n*(?:For[çc]as\s+principais|Focos\s+de\s+ressalva)[\s\S]*$", "", raw_c, flags=re.IGNORECASE).strip()
+            classif_limpo = str(classif).rstrip(".")
             texto_conclusao = (
-                f"PARECER FINAL: {classif}.\n"
-                "JUSTIFICATIVA EXECUTIVA: "
-                + re.sub(r"^\s*[:\-–]\s*", "", match_conclusao.group(1).strip())
-                + f"\nForças principais: {forcas_txt}. Focos de ressalva: {ressalvas_txt}."
+                f"PARECER FINAL: {classif_limpo}.\n"
+                f"JUSTIFICATIVA EXECUTIVA: {raw_c}\n"
+                f"Forças principais: {forcas_txt}. Focos de ressalva: {ressalvas_txt}."
             )
         else:
             texto_conclusao = (
