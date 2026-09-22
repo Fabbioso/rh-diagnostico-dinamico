@@ -108,7 +108,7 @@ def calcular_indice_global_integrado(
         motivo_vermelho = "Vulnerabilidade severa na avaliação de Saúde Psicológica e Gestão de Esgotamento."
         
     if sinal_vermelho:
-        classificacao = "Veto Técnico / Bloqueio por Sinal Vermelho"
+        classificacao = "Veto de Governança"
     elif indice_global >= 80.0:
         classificacao = "Recomendado com Destaque (Alta Sinergia Integrada)"
     elif indice_global >= 65.0:

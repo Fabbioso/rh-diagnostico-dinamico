@@ -142,3 +142,23 @@ def obter_avaliacao_por_id(avaliacao_id: int, db_path: str = DB_NAME) -> Optiona
     except Exception as e:
         print(f"[ERRO DB] Falha ao obter avaliação {avaliacao_id}: {e}")
         return None
+
+
+def obter_historico_avaliacoes(*args, **kwargs):
+    import pandas as pd
+    import sqlite3
+    db_file = args[0] if args else 'database.db'
+    try:
+        conn = sqlite3.connect(db_file)
+        cursor = conn.cursor()
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='avaliacoes'")
+        if not cursor.fetchone():
+            conn.close()
+            return pd.DataFrame()
+        df = pd.read_sql_query('SELECT * FROM avaliacoes', conn)
+        conn.close()
+        if 'vaga' not in df.columns:
+            df['vaga'] = df['cargo'] if 'cargo' in df.columns else 'N/A'
+        return df
+    except Exception:
+        return pd.DataFrame()
