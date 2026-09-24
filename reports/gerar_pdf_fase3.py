@@ -106,9 +106,9 @@ def gerar_laudo_fase3_pdf(
     ig = float(indice_global or 0)
     sinal_v = str(sinal_vermelho).strip().lower() in ["sim", "true", "1", "ativo"]
     classif_str = (
-        "Não Recomendado (Sinal Vermelho Ativado)"
-        if sinal_v else sanitizar(classificacao or "Avaliado")
-    )
+    "Não Recomendado (Veto de Governança)"
+    if sinal_v else sanitizar(classificacao or "Avaliado")
+)
     classif_str = classif_str.replace(
         "Aderência entre 65% a 79%",
         "Aderência entre 65% e 79%",
@@ -163,7 +163,7 @@ def gerar_laudo_fase3_pdf(
         pdf.set_draw_color(239, 68, 68)
         pdf.set_font("helvetica", "B", 7)
         pdf.set_text_color(185, 28, 28)
-        pdf.cell(0, 4.5, sanitizar(" [!] SINAL VERMELHO ATIVADO: Ponto crítico detectado nas bases de Resiliência ou Ética."), 1, 1, "L", True)
+        pdf.cell(0, 4.5, sanitizar(" [-] SINAL VERMELHO ATIVADO: Veto Mandatório de Governança (Risco em bases críticas)"), 1, 1, "L", True)
     else:
         pdf.set_fill_color(240, 253, 244)
         pdf.set_draw_color(34, 197, 94)
