@@ -51,7 +51,9 @@ def gerar_analise_fase1(
     nivel: str,
     arquetipo: str,
     dados_casas: Dict[int, Dict[str, Any]],
-    modelo_nome: Optional[str] = None
+    modelo_nome: Optional[str] = None,
+    classificacao_formal: str = "Não Recomendado",
+    sinal_vermelho: bool = False
 ) -> Tuple[bool, str, Dict[str, Any]]:
     """
     Gera a análise qualitativa comportamental das 8 casas de Tarot para a Fase 1.
@@ -77,6 +79,11 @@ def gerar_analise_fase1(
     CANDIDATO: {candidato_nome}
     CARGO PRETENDIDO: {cargo} ({nivel})
     ARQUÉTIPO CORPORATIVO: {arquetipo}
+    CLASSIFICAÇÃO FORMAL DO SISTEMA: {classificacao_formal}
+    SINAL VERMELHO ATIVO: {'SIM' if sinal_vermelho else 'NÃO'}
+
+    DIRETRIZ MANDATÓRIA DE GOVERNANÇA:
+    O Parecer Final DEVE refletir obrigatoriamente a CLASSIFICAÇÃO FORMAL DO SISTEMA ({classificacao_formal}). É terminantemente proibido discordar ou alterar esta classificação na conclusão do laudo. Se a classificação formal for 'Não Recomendado' ou se houver Sinal Vermelho ativo, o parecer deve justificar e sustentar tecnicamente a não recomendação com base nas vulnerabilidades e riscos identificados, sem atenuar o veredito.
 
     MATRIZ DAS 8 CASAS:
     {bloco_casas_str}
@@ -90,12 +97,15 @@ def gerar_analise_fase1(
     CARTA POSITIVA: [Nome da Carta] - [Análise detalhada de 2 a 3 linhas do recurso integrador ou força]
     RESUMO DA LEITURA: [Síntese executiva de 2 a 3 linhas sobre a competência para a tabela do laudo]
 
-    Ao final das 8 casas, inclua a seção conclusiva com:
+    Ao final das 8 casas, inclua a seção conclusiva estruturada com alto rigor corporativo:
     CONCLUSÃO E RECOMENDAÇÃO FINAL
     PARECER FINAL: [Recomendado com Destaque / Recomendado com Ressalvas / Não Recomendado]
-    JUSTIFICATIVA EXECUTIVA: [Parecer executivo detalhado conectando o arquétipo às competências avaliadas]
-    Forças principais: [Competências com melhores notas]
-    Focos de ressalva: [Competências que exigem acompanhamento]
+    JUSTIFICATIVA EXECUTIVA: [Elabore um parecer executivo estratégico, denso e aprofundado de 6 a 10 linhas, estruturado em três eixos:
+    1. Aderência Arquétipo-Cargo: Como o perfil e a pontuação se articulam com o arquétipo corporativo ({arquetipo}) e com os desafios do cargo de {cargo} ({nivel}).
+    2. Riscos Comportamentais e Operacionais: Diagnóstico detalhado dos pontos críticos e de vulnerabilidade (especialmente competências com notas baixas <= 2), avaliando o impacto direto na rotina da equipe, na cultura organizacional e na integridade de processos.
+    3. Parecer e Governança: Justificativa final da recomendação ou contraindicação técnica, estabelecendo condições mandatórias caso avance (ex: mentoria, acompanhamento próximo) ou os motivos determinantes de veto caso represente risco corporativo severo.]
+    Forças principais: [Competências de destaque com notas]
+    Focos de ressalva: [Competências críticas ou com baixa pontuação]
     """
         response = model.generate_content(prompt)
         
