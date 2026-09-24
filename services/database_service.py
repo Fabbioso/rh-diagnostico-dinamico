@@ -2,14 +2,31 @@ import sqlite3
 import json
 from datetime import datetime
 from typing import Tuple, Dict, Any, List, Optional
+from contextlib import contextmanager
 
 DB_NAME = "rh diagnostico dinamico.db"
 
-def get_connection(db_path: str = DB_NAME) -> sqlite3.Connection:
-    """Cria e retorna uma conexão configurada com o SQLite."""
-    conn = sqlite3.connect(db_path, timeout=10)
+@contextmanager
+def get_db_cursor(db_path: str = DB_NAME):
+    """
+    Context manager seguro que garante abertura, commit/rollback 
+    e fechamento definitivo da conexão com suporte a multi-threading.
+    """
+    conn = sqlite3.connect(db_path, timeout=15.0, check_same_thread=False)
     conn.row_factory = sqlite3.Row
-    return conn
+    # Habilita Write-Ahead Logging para concorrência segura no Streamlit
+    conn.execute("PRAGMA journal_mode=WAL;")
+    conn.execute("PRAGMA synchronous=NORMAL;")
+    cursor = conn.cursor()
+    try:
+        yield cursor
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        cursor.close()
+        conn.close()
 
 def init_db(db_path: str = DB_NAME) -> None:
     """Inicializa a tabela de avaliações caso ela não exista."""
@@ -32,15 +49,12 @@ def init_db(db_path: str = DB_NAME) -> None:
         payload_completo_json TEXT
     );
     """
-    with get_connection(db_path) as conn:
-        cursor = conn.cursor()
+    with get_db_cursor(db_path) as cursor:
         cursor.execute(create_table_sql)
-        conn.commit()
 
 def salvar_avaliacao(dados: Dict[str, Any], db_path: str = DB_NAME) -> Tuple[bool, str]:
     """
-    Persiste uma avaliação corporativa consolidada no SQLite.
-    Retorna uma tupla (sucesso: bool, mensagem: str).
+    Persiste uma avaliação corporativa consolidada no SQLite com transação atômica.
     """
     insert_sql = """
     INSERT INTO avaliacoes (
@@ -64,10 +78,9 @@ def salvar_avaliacao(dados: Dict[str, Any], db_path: str = DB_NAME) -> Tuple[boo
         init_db(db_path)
         data_registro = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         
-        # Extração e normalização dos dados recebidos
         nome = dados.get("nome", "").strip()
-        cargo = dados.get("cargo", "").strip()
-        nivel = dados.get("nivel", "").strip()
+        cargo = dados.get("cargo", "").strip() or dados.get("cargo_pretendido", "").strip()
+        nivel = dados.get("nivel", "").strip() or dados.get("nivel_hierarquico", "").strip()
         arquetipo = dados.get("arquetipo", "")
         
         pts_f1 = float(dados.get("pontuacao_fase1", 0.0))
@@ -76,15 +89,13 @@ def salvar_avaliacao(dados: Dict[str, Any], db_path: str = DB_NAME) -> Tuple[boo
         ad_f2 = float(dados.get("aderencia_fase2", 0.0))
         
         indice_global = float(dados.get("indice_global", 0.0))
-        classificacao = dados.get("classificacao", "")
+        classificacao = dados.get("classificacao", "") or dados.get("classificacao_final", "")
         sinal_vermelho = 1 if dados.get("sinal_vermelho", False) else 0
         parecer = dados.get("parecer_tecnico", "")
         
-        # Converte dicionários de notas ou estado completo em JSON de auditoria
         payload_json = json.dumps(dados, ensure_ascii=False, default=str)
         
-        with get_connection(db_path) as conn:
-            cursor = conn.cursor()
+        with get_db_cursor(db_path) as cursor:
             cursor.execute(insert_sql, (
                 data_registro,
                 nome,
@@ -101,19 +112,21 @@ def salvar_avaliacao(dados: Dict[str, Any], db_path: str = DB_NAME) -> Tuple[boo
                 parecer,
                 payload_json
             ))
-            conn.commit()
-            return True, f"Avaliação de '{nome}' gravada com sucesso no banco de dados!"
+            
+        return True, f"Avaliação de '{nome}' gravada com sucesso no banco de dados!"
             
     except Exception as e:
         return False, f"Erro ao persistir no SQLite: {str(e)}"
 
 def listar_candidatos_salvos(db_path: str = DB_NAME) -> List[Dict[str, Any]]:
-    """Retorna a lista de todas as avaliações para seleção e consulta."""
+    """Retorna a lista resumida de todas as avaliações para seleção e consulta."""
     try:
-        init_db(db_path)
-        query = "SELECT id, data_registro, nome_candidato, cargo_pretendido, indice_global FROM avaliacoes ORDER BY id DESC"
-        with get_connection(db_path) as conn:
-            cursor = conn.cursor()
+        query = """
+        SELECT id, data_registro, nome_candidato, cargo_pretendido, indice_global, sinal_vermelho, classificacao_final 
+        FROM avaliacoes 
+        ORDER BY id DESC
+        """
+        with get_db_cursor(db_path) as cursor:
             cursor.execute(query)
             rows = cursor.fetchall()
             return [dict(row) for row in rows]
@@ -121,13 +134,10 @@ def listar_candidatos_salvos(db_path: str = DB_NAME) -> List[Dict[str, Any]]:
         print(f"[ERRO DB] Falha ao listar candidatos: {e}")
         return []
 
-
 def obter_avaliacao_por_id(avaliacao_id: int, db_path: str = DB_NAME) -> Optional[Dict[str, Any]]:
     """Recupera os dados completos de uma avaliação pelo ID."""
     try:
-        init_db(db_path)
-        with get_connection(db_path) as conn:
-            cursor = conn.cursor()
+        with get_db_cursor(db_path) as cursor:
             cursor.execute("SELECT * FROM avaliacoes WHERE id = ?", (avaliacao_id,))
             row = cursor.fetchone()
             if row:
@@ -143,22 +153,39 @@ def obter_avaliacao_por_id(avaliacao_id: int, db_path: str = DB_NAME) -> Optiona
         print(f"[ERRO DB] Falha ao obter avaliação {avaliacao_id}: {e}")
         return None
 
-
-def obter_historico_avaliacoes(*args, **kwargs):
+def obter_historico_avaliacoes(db_path: str = DB_NAME):
+    """Retorna o histórico completo de avaliações em um DataFrame Pandas com suporte a esquemas legados e atuais."""
     import pandas as pd
-    import sqlite3
-    db_file = args[0] if args else 'database.db'
     try:
-        conn = sqlite3.connect(db_file)
-        cursor = conn.cursor()
-        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='avaliacoes'")
-        if not cursor.fetchone():
-            conn.close()
-            return pd.DataFrame()
-        df = pd.read_sql_query('SELECT * FROM avaliacoes', conn)
-        conn.close()
-        if 'vaga' not in df.columns:
-            df['vaga'] = df['cargo'] if 'cargo' in df.columns else 'N/A'
-        return df
-    except Exception:
+        with get_db_cursor(db_path) as cursor:
+            cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='avaliacoes'")
+            if not cursor.fetchone():
+                return pd.DataFrame()
+            
+            cursor.execute("SELECT * FROM avaliacoes ORDER BY id DESC")
+            rows = cursor.fetchall()
+            if not rows:
+                return pd.DataFrame()
+            
+            df = pd.DataFrame([dict(r) for r in rows])
+            
+            # Normalização de compatibilidade de nomes de colunas (legado vs atual)
+            if 'vaga' not in df.columns:
+                if 'cargo_pretendido' in df.columns and 'cargo' in df.columns:
+                    df['vaga'] = df['cargo_pretendido'].fillna(df['cargo'])
+                elif 'cargo_pretendido' in df.columns:
+                    df['vaga'] = df['cargo_pretendido']
+                elif 'cargo' in df.columns:
+                    df['vaga'] = df['cargo']
+                else:
+                    df['vaga'] = 'N/A'
+
+            if 'nome' not in df.columns and 'nome_candidato' in df.columns:
+                df['nome'] = df['nome_candidato']
+            elif 'nome_candidato' not in df.columns and 'nome' in df.columns:
+                df['nome_candidato'] = df['nome']
+                
+            return df
+    except Exception as e:
+        print(f"[ERRO DB] Falha ao carregar histórico DataFrame: {e}")
         return pd.DataFrame()
