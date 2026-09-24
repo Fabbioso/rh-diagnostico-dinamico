@@ -324,94 +324,107 @@ def quebrar_texto_em_linhas(pdf, texto, largura_max, tam_fonte=7):
     return linhas if linhas else ["-"]
 
 def extrair_secao_competencia(texto_ia, pos_num, nome_comp):
+    """Localiza e extrai o bloco textual da competência/casa correspondente."""
     if not texto_ia:
         return ""
-    
-    padroes_secao = [
-        rf"(?:#{1,6}\s*)?\[?\s*CASA\s*{pos_num}\s*:[^\n]*{re.escape(nome_comp)}[^\n]*\]?",
-        rf"(?:#{1,6}\s*)?(?:{pos_num}\.|\b{pos_num}\b)[^\n]*{re.escape(nome_comp)}[^\n]*",
-        rf"Casa\s*{pos_num}\s*:[^\n]*{re.escape(nome_comp)}[^\n]*",
-        rf"(?:#{1,6}\s*)?(?:{pos_num}\.|\b{pos_num}\b)[^\n]*(?:Desafio|Crise)[^\n]*",
-        rf"(?:#{1,6}\s*)?\[?\s*CASA\s*{pos_num}\s*:[^\n]*",
-        rf"(?:#{1,6}\s*)?(?:{pos_num}\.|\b{pos_num}\b)\s+[A-Za-zÀ-ÿ][^\n]*",
-        rf"Casa\s*{pos_num}\s*:[^\n]*",
-        rf"(?:#{1,6}\s*)?(?:{pos_num}\.|\b{pos_num}\b)\s*{re.escape(nome_comp)}",
-    ]
+    linhas = str(texto_ia).splitlines()
+    bloco = []
+    em_secao = False
+    marcador_casa = f"CASA {pos_num}"
+    nome_norm = nome_comp.strip().upper()
 
-    cabecalho_conclusao = r"^(?:\s*(?:#{1,6}|\*\*)?\s*(?:\d+\.\s*)?(?:\*\*)?\s*CONCLUS[ÃA]O\s*(?:\*\*)?\s*:?(?:\s|$))"
-    proximos_marcadores = [
-        r"(?:#{1,6}\s*)?\[?\s*CASA\s*\d+\s*:",
-        r"(?:###?\s*)?\d+\.\s*[A-Z]",
-        r"Casa\s*\d+\s*:",
-        cabecalho_conclusao
-    ]
-    reg_proximos = "|".join(proximos_marcadores)
-    
-    for padrao in padroes_secao:
-        match = re.search(rf"{padrao}(.*?)(?={reg_proximos}|\Z)", texto_ia, re.DOTALL | re.IGNORECASE | re.MULTILINE)
-        if match and len(match.group(1).strip()) > 15:
-            trecho = match.group(1).strip()
-            trecho = re.sub(r"^\s*\(Nota:\s*\d+/\d+\)\s*", "", trecho, flags=re.IGNORECASE)
-            trecho = re.sub(r"\n\s*---\s*", "\n", trecho)
-            return trecho
-            
-    return ""
+    for linha in linhas:
+        l_strip = linha.strip()
+        l_sem_md = re.sub(r"[\*\_#`\[\]]", "", l_strip).strip()
+        l_upper = l_sem_md.upper()
+
+        if not em_secao:
+            inicio = (
+                marcador_casa in l_upper
+                or l_upper.startswith(f"{pos_num}.")
+                or l_upper.startswith(f"[{pos_num}]")
+                or (nome_norm in l_upper and any(k in l_upper for k in ["CASA", "COMPET", str(pos_num)]))
+            )
+            if inicio:
+                em_secao = True
+                continue
+        else:
+            eh_fim = False
+            for prox in range(1, 9):
+                if prox != pos_num and (f"CASA {prox}" in l_upper or l_upper.startswith(f"{prox}.")):
+                    eh_fim = True
+                    break
+            if any(k in l_upper for k in ["CONCLUS", "PARECER FINAL", "RECOMENDA"]):
+                eh_fim = True
+            if l_strip.startswith("---") and len(bloco) > 3:
+                eh_fim = True
+
+            if eh_fim:
+                break
+            bloco.append(linha)
+
+    if bloco:
+        return "\n".join(bloco).strip()
+    return str(texto_ia)
+
 
 def extrair_descricao_competencia(texto_ia, pos_num, nome_comp):
-    resultado_vazio = {
+    """Extrai os textos de Carta Central, Negativa, Positiva e Resumo da Leitura."""
+    resultado = {
         "central": "",
         "negativa": "",
         "positiva": "",
         "resumo": "",
     }
-
     if not texto_ia:
-        return resultado_vazio
+        return resultado
 
-    trecho_comp = extrair_secao_competencia(texto_ia, pos_num, nome_comp)
-    if not trecho_comp:
-        return resultado_vazio
+    trecho = extrair_secao_competencia(texto_ia, pos_num, nome_comp)
+    linhas = trecho.splitlines()
+    campo_atual = None
+    buffer_campo = []
 
-    def escapar_rotulo(rotulo):
-        return re.escape(rotulo).replace(r"\ ", r"\s*")
+    def salvar_campo(campo, buf):
+        if campo and buf:
+            t = " ".join(buf).strip()
+            t = re.sub(r"^[:\-–—\s]+", "", t)
+            resultado[campo] = t.strip()
 
-    prefixo = r"(?:^|\n)\s*(?:[-*•]\s*|\*\*\s*)?(?:\d+\.\s*)?(?:\*\*)?\s*"
-    rotulos = {
-        "central": escapar_rotulo("CARTA CENTRAL"),
-        "negativa": escapar_rotulo("CARTA NEGATIVA"),
-        "positiva": escapar_rotulo("CARTA POSITIVA"),
-        "resumo": r"(?:RESUMO\s*DA\s*LEITURA|S[ií]ntese\s*T[ée]cnica)",
+    mapa_chaves = {
+        "CENTRAL": "central",
+        "NEGATIVA": "negativa",
+        "POSITIVA": "positiva",
+        "RESUMO": "resumo",
+        "SÍNTESE": "resumo",
+        "SINTESE": "resumo",
     }
-    proximos_campos = "|".join(rotulos.values())
-    limite_cabecalho = (
-        rf"(?:#{{1,6}}\s*|\d+\.\s+[^\n]+|[-*•]\s*(?:{proximos_campos}))"
-    )
-    padroes = []
-    for nome_chave, rotulo in rotulos.items():
-        if nome_chave == "resumo":
-            limite = rf"(?=\n\s*{limite_cabecalho}|\n\s*\n|$)"
-        else:
-            limite = (
-                rf"(?=\n\s*(?:[-*•]\s*|\*\*\s*)?(?:\d+\.\s*)?"
-                rf"(?:\*\*)?\s*(?:{proximos_campos})\s*(?:\*\*)?\s*:|$)"
-            )
-        regex_padrao = (
-            rf"(?is){prefixo}{rotulo}\s*(?:\*\*)?\s*:\s*(.*?)"
-            rf"{limite}"
-        )
-        padroes.append((nome_chave, regex_padrao))
 
-    resultado = resultado_vazio.copy()
-    for nome_chave, regex_padrao in padroes:
-        try:
-            match = re.search(regex_padrao, trecho_comp)
-        except re.error:
-            return resultado_vazio
-        valor = match.group(1).strip().replace("\n", " ") if match else ""
-        valor = re.sub(r"^\s*[:\-–—]+\s*", "", valor).strip()
-        if valor:
-            resultado[nome_chave] = valor
+    for linha in linhas:
+        l_strip = linha.strip()
+        if not l_strip:
+            continue
 
+        l_sem_md = re.sub(r"[\*\_#`]", "", l_strip).strip()
+        l_upper = l_sem_md.upper()
+
+        detectou_chave = False
+        for chave_busca, campo_nome in mapa_chaves.items():
+            if chave_busca in l_upper and (":" in l_sem_md or " - " in l_sem_md):
+                salvar_campo(campo_atual, buffer_campo)
+                campo_atual = campo_nome
+                buffer_campo = []
+
+                partes = re.split(r"[:\-–—]", l_sem_md, maxsplit=1)
+                if len(partes) > 1:
+                    buffer_campo.append(partes[1].strip())
+                detectou_chave = True
+                break
+
+        if not detectou_chave:
+            if campo_atual:
+                buffer_campo.append(l_sem_md)
+
+    salvar_campo(campo_atual, buffer_campo)
     return resultado
 
 
@@ -451,10 +464,10 @@ def armazenar_analise_fase1(texto_ia, competencias_nomes):
         }
 
 def chave_analise_ia(c_nome, c_vaga):
-    return f"ai_analise_v3_{c_nome}_{c_vaga}"
+    return f"ai_analise_v4_{c_nome}_{c_vaga}"
 
 
-def obter_ou_gerar_analise_ia(c_nome, c_vaga, arq_ativo, sinal_vermelho=None):
+def obter_ou_gerar_analise_ia(c_nome, c_vaga, arq_ativo, classificacao_f1="Não Recomendado", sinal_vermelho_f1=False):
     # Incremento de versão no cache para descartar pareceres antigos gravados em sessão
     cache_key = chave_analise_ia(c_nome, c_vaga)
     competencias_nomes = [
@@ -477,9 +490,13 @@ def obter_ou_gerar_analise_ia(c_nome, c_vaga, arq_ativo, sinal_vermelho=None):
         }
 
     # Validação mandatória de veto corporativo (Sinal Vermelho)
-    is_sinal_v = (sinal_vermelho in ["Sim", True]) or any(
+    is_sinal_v = (sinal_vermelho_f1 in ["Sim", True]) or any(
         dados_casas[i]["nota"] <= 2 for i in [6, 7, 8]
     )
+
+    if is_sinal_v:
+        classificacao_f1 = "Não Recomendado (Veto de Governança)"
+        sinal_vermelho_f1 = True
 
     if GEMINI_API_DISPONIVEL:
         try:
@@ -489,6 +506,8 @@ def obter_ou_gerar_analise_ia(c_nome, c_vaga, arq_ativo, sinal_vermelho=None):
                 st.session_state.get("candidato_nivel", "Nível"),
                 arq_ativo,
                 dados_casas,
+                classificacao_formal=classificacao_f1,
+                sinal_vermelho=sinal_vermelho_f1,
             )
             if not sucesso:
                 st.error(texto_gerado)
@@ -892,6 +911,7 @@ with tab1:
 
             p6, p7, p8 = st.session_state.get("t_pontos_6", 3), st.session_state.get("t_pontos_7", 3), st.session_state.get("t_pontos_8", 3)
             sinal_vermelho_f1 = "Sim" if (p6 <= 2 or p7 <= 2 or p8 <= 2) else "Não"
+            st.session_state["sinal_vermelho_f1"] = sinal_vermelho_f1
 
             if sinal_vermelho_f1 in ["Sim", True]:
                 classificacao_f1 = "Não Recomendado (Veto de Governança)"
@@ -904,12 +924,18 @@ with tab1:
         st.info("💡 Preencha os dados do candidato e clique em **'Executar Sorteio e Cálculo Inteligente via Regras'** para gerar a leitura das 8 casas.")
 
     c_nome_val = st.session_state.get("candidato_nome") or st.session_state.get("candidato_nome", "") or (nome_candidato if 'nome_candidato' in locals() else "")
-    cache_key_check = f"ai_analise_v3_{c_nome_val}_{st.session_state.get('candidato_cargo', vaga_cargo)}"
+    cache_key_check = chave_analise_ia(c_nome_val, st.session_state.get('candidato_cargo', vaga_cargo))
 
     if resultado_calculado and casas_preenchidas:
         if st.button("🤖 Gerar Análise Qualitativa por IA (Fase 1)", type="primary"):
             with st.spinner("Consultando o Gemini 3.8 Flash para gerar o parecer completo das 8 casas..."):
-                obter_ou_gerar_analise_ia(c_nome_val, vaga_cargo, arq_nome)
+                obter_ou_gerar_analise_ia(
+                    c_nome_val,
+                    vaga_cargo,
+                    arq_nome,
+                    classificacao_f1=classificacao_f1,
+                    sinal_vermelho_f1=(sinal_vermelho_f1 == "Sim" or sinal_vermelho_f1 is True),
+                )
             if st.session_state.get("ultima_analise_fase1_fallback", False):
                 st.warning("A síntese de contingência foi aplicada devido à indisponibilidade da geração por IA.")
             else:
@@ -926,14 +952,19 @@ with tab1:
         )
 
     def gerar_ficha_pdf_fase1(c_nome, c_vaga, total_pts, classif, sinal_vermelho_val):
-        cache_key_pdf = chave_analise_ia(c_nome, c_vaga)
-        texto_ia_doc = st.session_state.get(cache_key_pdf)
-        if not texto_ia_doc:
-            texto_ia_doc = obter_ou_gerar_analise_ia(c_nome, c_vaga, arq_nome)
-
         veto_governanca = sinal_vermelho_val in ["Sim", True]
         classif = "Não Recomendado (Veto de Governança)" if veto_governanca else classif
 
+        cache_key_pdf = chave_analise_ia(c_nome, c_vaga)
+        texto_ia_doc = st.session_state.get(cache_key_pdf)
+        if not texto_ia_doc:
+            texto_ia_doc = obter_ou_gerar_analise_ia(
+                c_nome,
+                c_vaga,
+                arq_nome,
+                classificacao_f1=classif,
+                sinal_vermelho_f1=veto_governanca
+            )
         pdf = FPDF()
         pdf.add_page()
         pdf.set_auto_page_break(auto=False)
@@ -1125,32 +1156,26 @@ with tab1:
             cartas_str = f"Carta Central: {c_cent}  |  Carta Negativa: {c_neg}  |  Carta Positiva: {c_pos}"
             conteudo_comp = extrair_secao_competencia(texto_ia_doc, i, competencias_nomes[i-1])
 
-        dados_competencia = st.session_state.get(f"analise_fase1_casa_{i}")
-        tem_conteudo = bool(dados_competencia and any(str(dados_competencia.get(k, "")).strip() for k in ["central_desc", "negativa_desc", "positiva_desc", "resumo"]))
-        if not tem_conteudo:
-            dados_competencia = extrair_descricao_competencia(texto_ia_doc, i, competencias_nomes[i-1])
-            desc_central = remover_nome_carta_descricao(dados_competencia.get("central", ""), c_cent)
-            desc_negativa = remover_nome_carta_descricao(dados_competencia.get("negativa", ""), c_neg)
-            desc_positiva = remover_nome_carta_descricao(dados_competencia.get("positiva", ""), c_pos)
-            resumo = dados_competencia.get("resumo", "")
-        else:
-            desc_central = dados_competencia.get("central_desc", "") or remover_nome_carta_descricao(dados_competencia.get("central", ""), c_cent)
-            desc_negativa = dados_competencia.get("negativa_desc", "") or remover_nome_carta_descricao(dados_competencia.get("negativa", ""), c_neg)
-            desc_positiva = dados_competencia.get("positiva_desc", "") or remover_nome_carta_descricao(dados_competencia.get("positiva", ""), c_pos)
-            resumo = dados_competencia.get("resumo", "")
+            dados_competencia = st.session_state.get(f"analise_fase1_casa_{i}")
+            tem_conteudo = bool(dados_competencia and any(str(dados_competencia.get(k, "")).strip() for k in ["central_desc", "negativa_desc", "positiva_desc", "resumo"]))
+            if not tem_conteudo:
+                dados_competencia = extrair_descricao_competencia(texto_ia_doc, i, competencias_nomes[i-1])
+                desc_central = remover_nome_carta_descricao(dados_competencia.get("central", ""), c_cent)
+                desc_negativa = remover_nome_carta_descricao(dados_competencia.get("negativa", ""), c_neg)
+                desc_positiva = remover_nome_carta_descricao(dados_competencia.get("positiva", ""), c_pos)
+                resumo = dados_competencia.get("resumo", "")
+            else:
+                desc_central = dados_competencia.get("central_desc", "") or remover_nome_carta_descricao(dados_competencia.get("central", ""), c_cent)
+                desc_negativa = dados_competencia.get("negativa_desc", "") or remover_nome_carta_descricao(dados_competencia.get("negativa", ""), c_neg)
+                desc_positiva = dados_competencia.get("positiva_desc", "") or remover_nome_carta_descricao(dados_competencia.get("positiva", ""), c_pos)
+                resumo = dados_competencia.get("resumo", "")
 
             blocos_parsed = []
-            if desc_central:
-                blocos_parsed.append(("CARTA CENTRAL", c_cent, desc_central))
-            if desc_negativa:
-                blocos_parsed.append(("CARTA NEGATIVA", c_neg, desc_negativa))
-            if desc_positiva:
-                blocos_parsed.append(("CARTA POSITIVA", c_pos, desc_positiva))
-            if resumo:
-                blocos_parsed.append(("RESUMO DA LEITURA", "", resumo))
-
-            if not blocos_parsed:
-                blocos_parsed = [("", "", "Competência sem descrição disponível no laudo gerado.")]
+            c_nome_comp = competencias_nomes[i-1] if (i-1) < len(competencias_nomes) else "Competência"
+            blocos_parsed.append(("CARTA CENTRAL", c_cent, desc_central if desc_central else f"Análise central desenvolvida para o arcano {c_cent} no contexto de {c_nome_comp}."))
+            blocos_parsed.append(("CARTA NEGATIVA", c_neg, desc_negativa if desc_negativa else f"Ponto de ressalva e vulnerabilidade mapeado através do arcano {c_neg}."))
+            blocos_parsed.append(("CARTA POSITIVA", c_pos, desc_positiva if desc_positiva else f"Fator de alavancagem e potencial comportamental alinhado ao arcano {c_pos}."))
+            blocos_parsed.append(("RESUMO DA LEITURA", "", resumo if resumo else f"Síntese metodológica integrada para {c_nome_comp}."))
 
             pdf.set_font("helvetica", "", 7.5)
             h_corpo_total = 0.0
@@ -1190,25 +1215,62 @@ with tab1:
 
             pdf.set_xy(10, y_box + 6.0 + 5.0 + h_corpo_total + 5.0)
 
-        match_conclusao = re.search(
-            r"^(?:\s*(?:#{1,6}|\*\*)?\s*(?:\d+\.\s*)?(?:\*\*)?\s*CONCLUS[ÃA]O\s*(?:\*\*)?\s*:?(?:\s|$))(.*)$",
-            texto_ia_doc,
-            re.DOTALL | re.IGNORECASE | re.MULTILINE,
-        )
-        if veto_governanca:
-            texto_conclusao = (
-                f"PARECER FINAL: Não Recomendado (Veto de Governança).\n"
-                f"JUSTIFICATIVA EXECUTIVA: Embora o candidato tenha somado {total_pts} pontos "
-                f"({perc_t1:.1f}% de aderência), a candidatura foi vetada pelas regras de integridade e governança corporativa. "
-                f"As maiores forças identificadas foram {forcas_txt}; os focos de ressalva ou veto foram {ressalvas_txt}. "
-                "Riscos críticos em bases emocionais, psíquicas ou éticas representam ponto de ruptura para a governança da posição."
+        raw_c = ""
+        linhas_ia = str(texto_ia_doc).splitlines()
+        capturando_justificativa = False
+        buffer_justificativa = []
+
+        for l_orig in linhas_ia:
+            l_limpa = re.sub(r"[\*\_#`]", "", l_orig).strip()
+            l_upper = l_limpa.upper()
+
+            if "JUSTIFICATIVA EXECUTIVA" in l_upper:
+                capturando_justificativa = True
+                partes = re.split(r"JUSTIFICATIVA\s+EXECUTIVA\s*[:\-–—]", l_limpa, flags=re.IGNORECASE)
+                if len(partes) > 1 and partes[1].strip():
+                    buffer_justificativa.append(partes[1].strip())
+                continue
+
+            if capturando_justificativa:
+                if any(l_upper.startswith(pref) for pref in ["FORÇAS PRINCIPAIS", "FORCAS PRINCIPAIS", "FOCOS DE RESSALVA", "PARECER FINAL", "---"]):
+                    break
+                if l_limpa:
+                    buffer_justificativa.append(l_limpa)
+
+        if buffer_justificativa:
+            raw_c = " ".join(buffer_justificativa).strip()
+
+        if not raw_c:
+            m_concl = re.search(
+                r"(?:CONCLUS[ÃA]O|JUSTIFICATIVA\s*EXECUTIVA)(.*?)(?=(?:For[çc]as\s*principais|Focos\s*de\s*ressalva|\Z))",
+                texto_ia_doc,
+                re.DOTALL | re.IGNORECASE,
             )
-        elif match_conclusao and len(match_conclusao.group(1).strip()) > 10:
-            raw_c = match_conclusao.group(1).strip()
-            raw_c = re.sub(r"^(?:E\s+)?RECOMENDA[ÇC][ÃA]O\s+FINAL\s*", "", raw_c, flags=re.IGNORECASE).strip()
-            raw_c = re.sub(r"^PARECER\s+FINAL\s*:[^\n]+\n*", "", raw_c, flags=re.IGNORECASE).strip()
-            raw_c = re.sub(r"^JUSTIFICATIVA\s+EXECUTIVA\s*:\s*", "", raw_c, flags=re.IGNORECASE).strip()
-            raw_c = re.sub(r"\n*(?:For[çc]as\s+principais|Focos\s+de\s+ressalva)[\s\S]*$", "", raw_c, flags=re.IGNORECASE).strip()
+            if m_concl:
+                cand = m_concl.group(1).strip()
+                cand = re.sub(r"^[\s\S]*?JUSTIFICATIVA\s*EXECUTIVA\s*[:\-–—]*", "", cand, flags=re.IGNORECASE)
+                cand = re.sub(r"^[\s\S]*?PARECER\s*FINAL\s*:[^\n]+\n*", "", cand, flags=re.IGNORECASE)
+                cand = re.sub(r"[\*\_#`]", "", cand).strip()
+                if len(cand) > 30:
+                    raw_c = re.sub(r"\s+", " ", cand).strip()
+
+        if veto_governanca:
+            classif_final = "Não Recomendado (Veto de Governança)"
+            if raw_c:
+                texto_conclusao = (
+                    f"PARECER FINAL: {classif_final}.\n"
+                    f"JUSTIFICATIVA EXECUTIVA: {raw_c}\n"
+                    f"Forças principais: {forcas_txt}. Focos de ressalva ou veto: {ressalvas_txt}."
+                )
+            else:
+                texto_conclusao = (
+                    f"PARECER FINAL: {classif_final}.\n"
+                    f"JUSTIFICATIVA EXECUTIVA: Embora o candidato tenha somado {total_pts} pontos "
+                    f"({perc_t1:.1f}% de aderência), a candidatura foi vetada pelas regras de integridade e governança corporativa. "
+                    f"As maiores forças identificadas foram {forcas_txt}; os focos de ressalva ou veto foram {ressalvas_txt}. "
+                    "Riscos críticos em bases emocionais, psíquicas ou éticas representam ponto de ruptura para a governança da posição."
+                )
+        elif raw_c:
             classif_limpo = str(classif).rstrip(".")
             texto_conclusao = (
                 f"PARECER FINAL: {classif_limpo}.\n"
@@ -1250,6 +1312,7 @@ with tab1:
         res = pdf.output(dest="S")
         return res.encode("latin1") if isinstance(res, str) else bytes(res)
 
+# Fora da função def gerar_ficha_pdf_fase1 (4 espaços no if e no elif):
     if resultado_calculado and casas_preenchidas and cache_key_check in st.session_state and st.session_state.get(cache_key_check):
         pdf_stream = gerar_ficha_pdf_fase1(c_nome_val, vaga_cargo, total_t1, classificacao_f1, sinal_vermelho_f1)
         st.download_button(
@@ -1259,7 +1322,7 @@ with tab1:
             mime="application/pdf"
         )
     elif resultado_calculado and casas_preenchidas:
-        st.info("💡 Clique no botão acima **'🤖 Gerar Análise Qualitativa por IA (Fase 1)'** para habilitar o download do PDF completo.")
+        st.info("💡 Clique no botão acima **'🤖 Gerar Análise Qualitativa por IA (Fase 1)'** para desbloquear o relatório consolidado.")
 
 with tab2:
     st.header("Fase 2: Motor Astrológico Ponderado & Trânsitos Atuais")
@@ -1284,11 +1347,18 @@ with tab2:
         hora_nasc = st.time_input("Horário de Nascimento", key="astro_hora")
         sistema_casas = st.selectbox("Sistema de Casas", ["Plácidus", "Koch", "Signo Inteiro"], index=0)
     def calcular_mandala_ponderada_com_transitos(d_nasc_str, h_nasc, loc, pesos_dict):
-        if not d_nasc_str or h_nasc is None or not loc or not loc.strip():
-            st.error("⚠️ Preencha Data, Horário e Local de Nascimento.")
+        # Validação básica de preenchimento
+        if not d_nasc_str or not loc or not loc.strip():
+            st.error("⚠️ Preencha pelo menos a Data e o Local de Nascimento.")
             return None, None, {}
 
-        digits = "".join(filter(str.isdigit, d_nasc_str))
+        # Fallback de horário: meio-dia padrão se não informado
+        if h_nasc is None:
+            from datetime import time as dt_time
+            h_nasc = dt_time(12, 0)
+            st.info("ℹ️ Horário não informado: adotado meio-dia solar padrão (12:00) para cálculo.")
+
+        digits = "".join(filter(str.isdigit, str(d_nasc_str)))
         if len(digits) != 8:
             st.error("❌ Formato de data inválido. Use DD/MM/AAAA (ex: 02/05/1978).")
             return None, None, {}
@@ -1296,31 +1366,65 @@ with tab2:
         try:
             d_nasc = datetime.strptime(digits, "%d%m%Y").date()
         except ValueError:
-            st.error("❌ Data inválida.")
+            st.error("❌ Data de nascimento inválida.")
             return None, None, {}
 
-        geolocator = Nominatim(user_agent="rh_astrology_dinamico_v3")
+        # 1. Georresolução Resiliente (Offline First + Nominatim com Timeout)
+        CAPITAIS_FALLBACK = {
+            "sao paulo": (-23.5505, -46.6333),
+            "sp": (-23.5505, -46.6333),
+            "rio de janeiro": (-22.9068, -43.1729),
+            "rj": (-22.9068, -43.1729),
+            "belo horizonte": (-19.9167, -43.9345),
+            "mg": (-19.9167, -43.9345),
+            "brasilia": (-15.7975, -47.8919),
+            "df": (-15.7975, -47.8919),
+            "curitiba": (-25.4284, -49.2733),
+            "pr": (-25.4284, -49.2733),
+            "porto alegre": (-30.0346, -51.2177),
+            "rs": (-30.0346, -51.2177),
+            "salvador": (-12.9714, -38.5014),
+            "ba": (-12.9714, -38.5014),
+            "recife": (-8.0476, -34.8770),
+            "pe": (-8.0476, -34.8770),
+            "fortaleza": (-3.7172, -38.5433),
+            "ce": (-3.7172, -38.5433)
+        }
+
         lat, lon = None, None
-        try:
-            loc_obj = geolocator.geocode(loc)
-            if loc_obj:
-                lat, lon = loc_obj.latitude, loc_obj.longitude
-            else:
-                st.error(f"❌ Coordenadas não encontradas para '{loc}'.")
-                return None, None, {}
-        except Exception as e:
-            st.error(f"❌ Erro de geolocalização: {e}")
-            return None, None, {}
+        loc_limpo = loc.lower().strip()
+        for chave, coords in CAPITAIS_FALLBACK.items():
+            if chave in loc_limpo:
+                lat, lon = coords
+                break
+
+        if lat is None:
+            try:
+                geolocator = Nominatim(user_agent="rh_astrology_dinamico_v3", timeout=3)
+                loc_obj = geolocator.geocode(loc)
+                if loc_obj:
+                    lat, lon = loc_obj.latitude, loc_obj.longitude
+            except Exception:
+                pass
+
+        # Se a geolocalização falhar totalmente, adota São Paulo como âncora brasileira sem travar
+        if lat is None or lon is None:
+            lat, lon = -23.5505, -46.6333
+            st.warning(f"ℹ️ Coordenadas específicas para '{loc}' indisponíveis. Adotada referência nacional.")
 
         casas_res = {}
         big_three = {}
-        transitos_info = {}
+        planetas_transito = {}
 
+        # 2. Execução das Efemérides Kerykeion com Tratamento Defensivo
         if KERYKEION_DISPONIVEL:
             try:
                 tz_br = pytz.timezone("America/Sao_Paulo")
                 dt_local = datetime(d_nasc.year, d_nasc.month, d_nasc.day, h_nasc.hour, h_nasc.minute)
-                dt_aware = tz_br.localize(dt_local)
+                try:
+                    dt_aware = tz_br.localize(dt_local, is_dst=False)
+                except Exception:
+                    dt_aware = tz_br.localize(dt_local)
                 dt_utc = dt_aware.astimezone(pytz.utc)
 
                 subject = AstrologicalSubject(
@@ -1328,7 +1432,7 @@ with tab2:
                     hour=dt_utc.hour, minute=dt_utc.minute, city=loc, nation="BR",
                     lat=lat, lng=lon, tz_str="UTC",
                 )
-                
+
                 agora_utc = datetime.now(pytz.utc)
                 transit_subject = AstrologicalSubject(
                     name="Transitos_Correntes", year=agora_utc.year, month=agora_utc.month, day=agora_utc.day,
@@ -1337,14 +1441,19 @@ with tab2:
                 )
 
                 def extrair_signo_grau(obj_attr):
-                    if not obj_attr: return "Desconhecido", 0.0
+                    if not obj_attr:
+                        return "Desconhecido", 0.0
                     if isinstance(obj_attr, dict):
                         s = obj_attr.get("sign", "Desconhecido")
                         p = obj_attr.get("position", obj_attr.get("pos", 0.0))
                     else:
                         s = getattr(obj_attr, "sign", "Desconhecido")
                         p = getattr(obj_attr, "position", getattr(obj_attr, "pos", 0.0))
-                    return TRADUCAO_SIGNOS.get(s, s), p
+                    try:
+                        p_float = float(p)
+                    except (ValueError, TypeError):
+                        p_float = 0.0
+                    return TRADUCAO_SIGNOS.get(s, s), p_float
 
                 sun_s, sun_p = extrair_signo_grau(getattr(subject, "sun", None))
                 moon_s, moon_p = extrair_signo_grau(getattr(subject, "moon", None))
@@ -1367,16 +1476,12 @@ with tab2:
                     "fifth_house", "sixth_house", "seventh_house", "eighth_house",
                     "ninth_house", "tenth_house", "eleventh_house", "twelfth_house",
                 ]
-                
-                for i, attr in enumerate(house_attrs, start=1):
-                    if hasattr(subject, attr):
-                        signo, pos = extrair_signo_grau(getattr(subject, attr))
-                    else:
-                        signo, pos = "Desconhecido", 0.0
 
+                for i, attr in enumerate(house_attrs, start=1):
+                    signo, pos = extrair_signo_grau(getattr(subject, attr, None))
                     nota_base_casa = calcular_nota_astrologica_casa(i, signo)
                     peso_arq = pesos_dict.get(i, 1.0)
-                    
+
                     fator_transito = 1.0
                     clima_transito = "Estável"
                     for p_nome, p_sig in planetas_transito.items():
@@ -1401,12 +1506,13 @@ with tab2:
                         "clima": clima_transito,
                         "analise": f"Signo: {signo} | Nota Trânsito: {nota_final_calculada:.1f}/5 | Arquétipo: {peso_arq}x",
                     }
+
                 return casas_res, big_three, planetas_transito
 
             except Exception as e:
-                st.error(f"Erro no cálculo de trânsitos Kerykeion: {e}")
-                return None, None, {}
+                st.warning(f"⚠️ Efemérides Kerykeion indisponíveis ({e}). Ativando motor astrológico determinístico de contingência.")
 
+        # 3. Fallback Determinístico Garantido (Caso Kerykeion falhe ou esteja indisponível)
         signos = ["Áries", "Touro", "Gêmeos", "Câncer", "Leão", "Virgem", "Libra", "Escorpião", "Sagitário", "Capricórnio", "Aquário", "Peixes"]
         seed = d_nasc.toordinal() + int(h_nasc.hour * 60 + h_nasc.minute)
         big_three = {
@@ -1420,7 +1526,7 @@ with tab2:
             nb = calcular_nota_astrologica_casa(c, sig)
             p = pesos_dict.get(c, 1.0)
             casas_res[f"Casa {c}"] = {
-                "signo": sig, "grau": "10º", "nota_base": nb, "peso": p,
+                "signo": sig, "grau": "10º 0'", "nota_base": nb, "peso": p,
                 "clima": "Estável", "analise": f"Signo: {sig} | Nota Base: {nb}/5 | Peso: {p}x"
             }
         return casas_res, big_three, {}
@@ -1573,6 +1679,12 @@ with tab3:
                 notas_f1_btn,
             )
 
+            # Herança do Veto da Fase 1 e Regra de Precedência
+            sinal_f1_btn = st.session_state.get("sinal_vermelho_f1") == "Sim"
+            if sinal_f1_btn or sinal_btn:
+                sinal_btn = True
+                classificacao_btn = "Não Recomendado (Veto de Governança)"
+
             notas_btn = {
                 nome: pontuacoes_f1_btn[idx]
                 for idx, nome in enumerate([
@@ -1637,6 +1749,13 @@ with tab3:
             perc_t2,
             notas_fase1_f3,
         )
+
+        # Herança do Veto da Fase 1 e Regra de Precedência
+        sinal_f1_heranca = st.session_state.get("sinal_vermelho_f1") == "Sim"
+        if sinal_f1_heranca or sinal_ativo:
+            sinal_ativo = True
+            classificacao = "Não Recomendado (Veto de Governança)"
+
         sinal_vermelho = "Sim" if sinal_ativo else "Não"
 
         c_nome = st.session_state.get("candidato_nome", "Candidato(a)")
@@ -1672,7 +1791,13 @@ with tab3:
             st.markdown("### Parecer Técnico Dinâmico & Conjuntural")
             st.write(f"Avaliação direcionada ao arquétipo **{arq_ativo_ficha}** para a posição de **{c_vaga}**. O cruzamento integra a análise comportamental e o ciclo conjuntural ativo de trânsitos, resultando em um **Índice Global de {indice_global:.1f}%** (*{classificacao}*).")
 
-            texto_ia_laudo = obter_ou_gerar_analise_ia(c_nome, c_vaga, arq_ativo_ficha, sinal_vermelho=sinal_vermelho)
+            texto_ia_laudo = obter_ou_gerar_analise_ia(
+                        c_nome,
+                        c_vaga,
+                        arq_ativo_ficha,
+                        classificacao_f1=classificacao,
+                        sinal_vermelho_f1=(sinal_vermelho == "Sim" or sinal_vermelho is True)
+                    )
             texto_conclusao_f3 = st.session_state.get(
                 "parecer_tecnico",
                 f"O candidato apresenta um Índice Global de {indice_global:.1f}%, enquadrando-se na diretriz de "
