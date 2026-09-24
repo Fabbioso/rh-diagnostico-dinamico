@@ -93,22 +93,30 @@ def calcular_indice_global_integrado(
     """
     indice_global = (aderencia_f1 * peso_f1) + (aderencia_f2 * peso_f2)
     
-    # Verificação de Sinal Vermelho
+        # Verificação de Sinal Vermelho por Dimensão Crítica de Governança
     sinal_vermelho = False
-    motivo_vermelho = ""
-    
-    nota_etica = float(notas_fase1.get(8, {}).get("nota", 3))
-    nota_psiquica = float(notas_fase1.get(7, {}).get("nota", 3))
-    
-    if nota_etica < 3.0:
+    motivos = []
+
+    n6 = float(notas_fase1.get(6, {}).get("nota", 3))
+    n7 = float(notas_fase1.get(7, {}).get("nota", 3))
+    n8 = float(notas_fase1.get(8, {}).get("nota", 3))
+
+    if n8 < 3.0:
         sinal_vermelho = True
-        motivo_vermelho = "Comprometimento crítico no pilar de Confiabilidade e Ética (Nota inferior a 3)."
-    elif nota_psiquica < 2.0:
+        motivos.append("Confiabilidade e Ética (Nota abaixo de 3.0)")
+
+    if n7 < 2.0:
         sinal_vermelho = True
-        motivo_vermelho = "Vulnerabilidade severa na avaliação de Saúde Psicológica e Gestão de Esgotamento."
+        motivos.append("Saúde Psicológica e Estabilidade (Nota abaixo de 2.0)")
+
+    if n6 < 2.0:
+        sinal_vermelho = True
+        motivos.append("Equilíbrio e Resiliência Operacional (Nota abaixo de 2.0)")
+
+    motivo_vermelho = f"Veto Mandatório de Governança: {', '.join(motivos)}." if sinal_vermelho else ""
         
     if sinal_vermelho:
-        classificacao = "Veto de Governança"
+        classificacao = "Não Recomendado (Veto de Governança)"
     elif indice_global >= 80.0:
         classificacao = "Recomendado com Destaque (Alta Sinergia Integrada)"
     elif indice_global >= 65.0:
