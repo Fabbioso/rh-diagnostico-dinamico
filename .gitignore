@@ -2,7 +2,9 @@
 .streamlit/secrets.toml
 .env
 
-# Banco de dados local (opcional, para não sobrescrever o banco da nuvem)
+# Banco de dados local
+*.db
+rh diagnostico dinamico.db
 rh_diagnostico_dinamico.db
 
 # Ambientes virtuais e cache do Python
