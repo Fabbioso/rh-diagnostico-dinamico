@@ -1400,7 +1400,7 @@ with tab2:
 
         if lat is None:
             try:
-                geolocator = Nominatim(user_agent="rh_astrology_dinamico_v3", timeout=3)
+                geolocator = Nominatim(user_agent="rh_astrology_dinamico_v3", timeout=10)
                 loc_obj = geolocator.geocode(loc)
                 if loc_obj:
                     lat, lon = loc_obj.latitude, loc_obj.longitude
