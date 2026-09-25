@@ -290,18 +290,34 @@ def remover_acentos(texto):
     return "".join([c for c in nfkd if not unicodedata.combining(c)]).lower()
 
 def sanitizar_pdf(texto):
+    """Normaliza strings removendo markdown, sintaxe LaTeX e caracteres incompatíveis com latin-1."""
     if not texto:
         return ""
-    texto = str(texto).replace("•", "-")
-    texto = texto.replace("°", chr(186)).replace("deg", chr(186))
-    texto = re.sub(r'\$\(?(\d+/\d+)\)?\$', r'\1', texto)
-    texto = texto.replace("**", "").replace("###", "").replace("##", "").replace("#", "").replace("*", "").replace("$", "")
-    texto = texto.replace("☐", "").replace("☑", "").replace("☒", "")
-    texto = re.sub(r'[^\x00-\xFF]', '', texto)
+    txt = str(texto)
+    # 1. Remove qualquer notação LaTeX ($4/5$, $(4/5)$, $Nota 4/5$, etc.)
+    txt = re.sub(r"\$([^\$]+)\$", r"\1", txt)
+    txt = txt.replace("$", "")
+    # 2. Remove títulos e marcadores de cabeçalho Markdown
+    txt = re.sub(r"^#{1,6}\s*", "", txt, flags=re.MULTILINE)
+    # 3. Remove ênfases de negrito e itálico Markdown (**texto**, *texto*, __texto__)
+    txt = re.sub(r"\*{1,3}(.*?)\*{1,3}", r"\1", txt)
+    txt = re.sub(r"_{1,3}(.*?)_{1,3}", r"\1", txt)
+    txt = txt.replace("**", "").replace("*", "")
+    # 4. Substituições tipográficas compatíveis com Latin-1
+    subs = {
+        "—": "-", "–": "-", "“": '"', "”": '"', "‘": "'", "’": "'",
+        "•": "-", "…": "...", "→": "->", "←": "<-", "º": chr(186), "ª": "a",
+        "`": "", "☐": "", "☑": "", "☒": ""
+    }
+    for orig, dest in subs.items():
+        txt = txt.replace(orig, dest)
+    txt = txt.replace("°", chr(186)).replace("deg", chr(186))
+    txt = re.sub(r"[ \t]+", " ", txt)
+    txt = re.sub(r"[^\x00-\xFF]", "", txt)
     try:
-        return texto.encode('latin-1', 'replace').decode('latin-1')
+        return txt.encode("latin-1", "replace").decode("latin-1")
     except Exception:
-        return str(texto)
+        return str(txt)
 
 def quebrar_texto_em_linhas(pdf, texto, largura_max, tam_fonte=7):
     linhas = []
@@ -369,7 +385,7 @@ def extrair_secao_competencia(texto_ia, pos_num, nome_comp):
 
 
 def extrair_descricao_competencia(texto_ia, pos_num, nome_comp):
-    """Extrai os textos de Carta Central, Negativa, Positiva e Resumo da Leitura."""
+    """Extrai os textos de Carta Central, Negativa, Positiva e Resumo com tolerância a variações de prompt."""
     resultado = {
         "central": "",
         "negativa": "",
@@ -390,39 +406,64 @@ def extrair_descricao_competencia(texto_ia, pos_num, nome_comp):
             t = re.sub(r"^[:\-–—\s]+", "", t)
             resultado[campo] = t.strip()
 
-    mapa_chaves = {
-        "CENTRAL": "central",
-        "NEGATIVA": "negativa",
-        "POSITIVA": "positiva",
-        "RESUMO": "resumo",
-        "SÍNTESE": "resumo",
-        "SINTESE": "resumo",
-    }
+    # Prioridade para RESUMO/SÍNTESE no topo e verificação restrita ao rótulo da linha
+    mapa_chaves = [
+        ("RESUMO", "resumo"),
+        ("SINTESE", "resumo"),
+        ("SÍNTESE", "resumo"),
+        ("CONCLUSAO", "resumo"),
+        ("CONCLUSÃO", "resumo"),
+        ("CENTRAL", "central"),
+        ("PRINCIPAL", "central"),
+        ("NEGATIV", "negativa"),
+        ("DESAFIO", "negativa"),
+        ("OBSTAC", "negativa"),
+        ("RESSALVA", "negativa"),
+        ("POSITIV", "positiva"),
+        ("POTENCIAL", "positiva"),
+        ("ALAVANCA", "positiva"),
+    ]
 
     for linha in linhas:
         l_strip = linha.strip()
         if not l_strip:
             continue
 
-        l_sem_md = re.sub(r"[\*\_#`]", "", l_strip).strip()
-        l_upper = l_sem_md.upper()
+        # Remove marcadores de lista e markdown iniciais (- , * , #)
+        l_limpa = re.sub(r"^[\*\s\-\–\—•#`]+", "", l_strip).strip()
+
+        # Separa o rótulo do conteúdo da linha
+        rotulo = ""
+        corpo = ""
+        if ":" in l_limpa:
+            partes = l_limpa.split(":", 1)
+            rotulo = partes[0].strip()
+            corpo = partes[1].strip()
+        elif " - " in l_limpa:
+            partes = l_limpa.split(" - ", 1)
+            rotulo = partes[0].strip()
+            corpo = partes[1].strip()
+
+        rotulo_norm = remover_acentos(rotulo).upper() if rotulo else ""
 
         detectou_chave = False
-        for chave_busca, campo_nome in mapa_chaves.items():
-            if chave_busca in l_upper and (":" in l_sem_md or " - " in l_sem_md):
-                salvar_campo(campo_atual, buffer_campo)
-                campo_atual = campo_nome
-                buffer_campo = []
-
-                partes = re.split(r"[:\-–—]", l_sem_md, maxsplit=1)
-                if len(partes) > 1:
-                    buffer_campo.append(partes[1].strip())
-                detectou_chave = True
-                break
+        if rotulo_norm:
+            for chave_busca, campo_nome in mapa_chaves:
+                chave_norm = remover_acentos(chave_busca).upper()
+                if chave_norm in rotulo_norm:
+                    salvar_campo(campo_atual, buffer_campo)
+                    campo_atual = campo_nome
+                    buffer_campo = []
+                    if corpo:
+                        corpo_limpo = re.sub(r"^[\*\s\-\–\—`]+", "", corpo).strip()
+                        if corpo_limpo:
+                            buffer_campo.append(corpo_limpo)
+                    detectou_chave = True
+                    break
 
         if not detectou_chave:
             if campo_atual:
-                buffer_campo.append(l_sem_md)
+                buffer_campo.append(l_strip.lstrip("*-• "))
 
     salvar_campo(campo_atual, buffer_campo)
     return resultado
@@ -1242,13 +1283,13 @@ with tab1:
 
         if not raw_c:
             m_concl = re.search(
-                r"(?:CONCLUS[ÃA]O|JUSTIFICATIVA\s*EXECUTIVA)(.*?)(?=(?:For[çc]as\s*principais|Focos\s*de\s*ressalva|\Z))",
+                r"(?:CONCLUS[ÃÃO]|JUSTIFICATIVA\s*EXECUTIVA)(.*?)(?=(?:For[çc]as\s*principais|Focos\s*de\s*ressalva|\Z))",
                 texto_ia_doc,
                 re.DOTALL | re.IGNORECASE,
             )
             if m_concl:
                 cand = m_concl.group(1).strip()
-                cand = re.sub(r"^[\s\S]*?JUSTIFICATIVA\s*EXECUTIVA\s*[:\-–—]*", "", cand, flags=re.IGNORECASE)
+                cand = re.sub(r"^[\s\S]*?JUSTIFICATIVA\s*EXECUTIVA\s*[:\-\–\—]*", "", cand, flags=re.IGNORECASE)
                 cand = re.sub(r"^[\s\S]*?PARECER\s*FINAL\s*:[^\n]+\n*", "", cand, flags=re.IGNORECASE)
                 cand = re.sub(r"[\*\_#`]", "", cand).strip()
                 if len(cand) > 30:

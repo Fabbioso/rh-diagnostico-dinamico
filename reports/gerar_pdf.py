@@ -11,21 +11,32 @@ except Exception:
     WEASYPRINT_DISPONIVEL = False
 
 def sanitizar_pdf(texto):
-    """Normaliza strings removendo markdown e caracteres incompatíveis com latin-1."""
+    """Normaliza strings removendo markdown, sintaxe LaTeX e caracteres incompatíveis com latin-1."""
     if texto is None:
         return ""
     txt = str(texto)
+    # 1. Remove sintaxe LaTeX matemática ($4/5$, $(4/5)$, etc.)
+    txt = re.sub(r"\$([^\$]+)\$", r"\1", txt)
+    txt = txt.replace("$", "")
+    # 2. Remove títulos e marcadores de cabeçalho Markdown
+    txt = re.sub(r"^#{1,6}\s*", "", txt, flags=re.MULTILINE)
+    # 3. Remove ênfases de negrito e itálico Markdown (**texto**, *texto*, __texto__)
+    txt = re.sub(r"\*{1,3}(.*?)\*{1,3}", r"\1", txt)
+    txt = re.sub(r"_{1,3}(.*?)_{1,3}", r"\1", txt)
+    txt = txt.replace("**", "").replace("*", "")
+    # 4. Substituições tipográficas compatíveis com a codificação Latin-1 do FPDF
     subs = {
         "—": "-", "–": "-", "“": '"', "”": '"', "‘": "'", "’": "'",
-        "•": "-", "…": "...", "→": "->", "←": "<-", "º": chr(186), "ª": "a",
-        "**": "", "###": "", "##": "", "#": "", "*": "", "$": ""
+        "•": "-", "…": "...", "→": "->", "←": "<-", "º": "°", "ª": "a",
+        "`": ""
     }
     for orig, dest in subs.items():
         txt = txt.replace(orig, dest)
-    txt = txt.replace("°", chr(186)).replace("deg", chr(186))
+    # 5. Normaliza espaçamentos e caracteres fora da tabela Latin-1
+    txt = re.sub(r"[ \t]+", " ", txt)
     txt = re.sub(r'[^\x00-\xFF]', '', txt)
     try:
-        return txt.encode('latin-1', 'replace').decode('latin-1')
+        return txt.encode("latin-1", "replace").decode("latin-1")
     except Exception:
         return str(txt)
 

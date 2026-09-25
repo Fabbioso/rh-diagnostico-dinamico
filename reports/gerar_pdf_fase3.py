@@ -24,12 +24,25 @@ def sanitizar(texto):
     if texto is None:
         return ""
     txt = str(texto)
+    # 1. Remove sintaxe LaTeX matemática ($4/5$, $(4/5)$, etc.)
+    txt = re.sub(r"\$([^\$]+)\$", r"\1", txt)
+    txt = txt.replace("$", "")
+    # 2. Remove títulos e marcadores de cabeçalho Markdown
+    txt = re.sub(r"^#{1,6}\s*", "", txt, flags=re.MULTILINE)
+    # 3. Remove ênfases de negrito e itálico Markdown (**texto**, *texto*, __texto__)
+    txt = re.sub(r"\*{1,3}(.*?)\*{1,3}", r"\1", txt)
+    txt = re.sub(r"_{1,3}(.*?)_{1,3}", r"\1", txt)
+    txt = txt.replace("**", "").replace("*", "")
+    # 4. Substituições tipográficas compatíveis com a codificação Latin-1 do FPDF
     subs = {
         "—": "-", "–": "-", "“": '"', "”": '"', "‘": "'", "’": "'",
-        "•": "-", "…": "...", "→": "->", "←": "<-", "º": "°", "ª": "a"
+        "•": "-", "…": "...", "→": "->", "←": "<-", "º": "°", "ª": "a",
+        "`": ""
     }
     for orig, dest in subs.items():
         txt = txt.replace(orig, dest)
+    # 5. Normaliza espaçamentos horizontais duplicados
+    txt = re.sub(r"[ \t]+", " ", txt)
     return txt.encode("latin-1", "replace").decode("latin-1")
 
 def formatar_cuspide(grau):
@@ -151,7 +164,7 @@ def gerar_laudo_fase3_pdf(
     card_h = 19.5
 
     desenhar_card(pdf, 10, y_cards, card_w, card_h, "FASE 1: TAROT COMPORTAMENTAL", f"{p1:.1f}%", "Peso Aplicado: 70%", (241, 245, 249), (30, 41, 59))
-    desenhar_card(pdf, 10 + card_w + 3, y_cards, card_w, card_h, "FASE 2: ESTRUTURAL & TRÂNSITOS", f"{p2:.1f}%", "Peso Aplicado: 30%", (241, 245, 249), (30, 41, 59))
+    desenhar_card(pdf, 10 + card_w + 3, y_cards, card_w, card_h, sanitizar("FASE 2: ESTRUTURAL & TRÂNSITOS"), f"{p2:.1f}%", "Peso Aplicado: 30%", (241, 245, 249), (30, 41, 59))
     
     cor_bg_ig = (254, 242, 242) if sinal_v else (240, 253, 244)
     cor_tx_ig = (185, 28, 28) if sinal_v else (21, 128, 61)
@@ -223,38 +236,40 @@ def gerar_laudo_fase3_pdf(
                     linhas_r += 1
                     linha_atual = p
             
-            total_linhas = max(3, len(partes_cartas[:3]), linhas_r)
+            linhas_comp = 2 if pdf.get_string_width(comp) > 25 else 1
+            total_linhas = max(3, len(partes_cartas[:3]), linhas_r, linhas_comp)
             row_h = (total_linhas * 3.2) + 2.0
 
             y_row = pdf.get_y()
+            y_text = y_row + 1.2
 
-            # POS
+            # POS (Top-aligned harmonizado)
             pdf.rect(10, y_row, 8, row_h)
-            pdf.set_xy(10, y_row + (row_h / 2) - 2)
+            pdf.set_xy(10, y_text)
             pdf.set_font("helvetica", "B", 7)
-            pdf.cell(8, 4, pos, 0, 0, "C")
+            pdf.cell(8, 3.4, pos, 0, 0, "C")
 
             # COMPETÊNCIA
             pdf.rect(18, y_row, 28, row_h)
-            pdf.set_xy(19, y_row + 1.2)
+            pdf.set_xy(19, y_text)
             pdf.set_font("helvetica", "B", 7)
             pdf.multi_cell(26, 3.4, comp, 0, "L")
 
             # CARTAS
             pdf.rect(46, y_row, 48, row_h)
-            pdf.set_xy(47, y_row + 1.2)
+            pdf.set_xy(47, y_text)
             pdf.set_font("helvetica", "", 6.2)
             pdf.multi_cell(46, 3.2, sanitizar(cartas_txt), 0, "L")
 
-            # NOTA
+            # NOTA (Top-aligned harmonizado)
             pdf.rect(94, y_row, 10, row_h)
-            pdf.set_xy(94, y_row + (row_h / 2) - 2)
+            pdf.set_xy(94, y_text)
             pdf.set_font("helvetica", "B", 7)
-            pdf.cell(10, 4, f"{nota}/5", 0, 0, "C")
+            pdf.cell(10, 3.4, f"{nota}/5", 0, 0, "C")
 
             # RESUMO
             pdf.rect(104, y_row, 96, row_h)
-            pdf.set_xy(105, y_row + 1.2)
+            pdf.set_xy(105, y_text)
             pdf.set_font("helvetica", "", 6.2)
             pdf.multi_cell(94, 3.2, resumo, 0, "L")
 
