@@ -1,10 +1,10 @@
-import sqlite3
+﻿import sqlite3
 import json
 from datetime import datetime
 from typing import Tuple, Dict, Any, List, Optional
 from contextlib import contextmanager
 
-DB_NAME = "rh diagnostico dinamico.db"
+DB_NAME = "rh_diagnostico_dinamico.db"
 
 @contextmanager
 def get_db_cursor(db_path: str = DB_NAME):
@@ -14,7 +14,6 @@ def get_db_cursor(db_path: str = DB_NAME):
     """
     conn = sqlite3.connect(db_path, timeout=15.0, check_same_thread=False)
     conn.row_factory = sqlite3.Row
-    # Habilita Write-Ahead Logging para concorrência segura no Streamlit
     conn.execute("PRAGMA journal_mode=WAL;")
     conn.execute("PRAGMA synchronous=NORMAL;")
     cursor = conn.cursor()
@@ -29,7 +28,7 @@ def get_db_cursor(db_path: str = DB_NAME):
         conn.close()
 
 def init_db(db_path: str = DB_NAME) -> None:
-    """Inicializa a tabela de avaliações caso ela não exista."""
+    """Inicializa a tabela unificada de avaliações caso ela não exista."""
     create_table_sql = """
     CREATE TABLE IF NOT EXISTS avaliacoes (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -46,7 +45,10 @@ def init_db(db_path: str = DB_NAME) -> None:
         classificacao_final TEXT,
         sinal_vermelho INTEGER,
         parecer_tecnico TEXT,
-        payload_completo_json TEXT
+        payload_completo_json TEXT,
+        tokens_in INTEGER DEFAULT 0,
+        tokens_out INTEGER DEFAULT 0,
+        custo_brl REAL DEFAULT 0.0
     );
     """
     with get_db_cursor(db_path) as cursor:
@@ -71,17 +73,20 @@ def salvar_avaliacao(dados: Dict[str, Any], db_path: str = DB_NAME) -> Tuple[boo
         classificacao_final,
         sinal_vermelho,
         parecer_tecnico,
-        payload_completo_json
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+        payload_completo_json,
+        tokens_in,
+        tokens_out,
+        custo_brl
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
     """
     try:
         init_db(db_path)
-        data_registro = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        data_registro = dados.get("data_registro") or datetime.now().strftime("%d / %m / %Y %H:%M")
         
-        nome = dados.get("nome", "").strip()
-        cargo = dados.get("cargo", "").strip() or dados.get("cargo_pretendido", "").strip()
-        nivel = dados.get("nivel", "").strip() or dados.get("nivel_hierarquico", "").strip()
-        arquetipo = dados.get("arquetipo", "")
+        nome = str(dados.get("nome", "") or dados.get("nome_candidato", "")).strip()
+        cargo = str(dados.get("cargo", "") or dados.get("cargo_pretendido", "")).strip()
+        nivel = str(dados.get("nivel", "") or dados.get("nivel_hierarquico", "")).strip()
+        arquetipo = str(dados.get("arquetipo", "") or dados.get("arquetipo_ativo", "")).strip()
         
         pts_f1 = float(dados.get("pontuacao_fase1", 0.0))
         ad_f1 = float(dados.get("aderencia_fase1", 0.0))
@@ -89,11 +94,18 @@ def salvar_avaliacao(dados: Dict[str, Any], db_path: str = DB_NAME) -> Tuple[boo
         ad_f2 = float(dados.get("aderencia_fase2", 0.0))
         
         indice_global = float(dados.get("indice_global", 0.0))
-        classificacao = dados.get("classificacao", "") or dados.get("classificacao_final", "")
-        sinal_vermelho = 1 if dados.get("sinal_vermelho", False) else 0
-        parecer = dados.get("parecer_tecnico", "")
+        classificacao = str(dados.get("classificacao", "") or dados.get("classificacao_final", "")).strip()
+        
+        sinal_raw = dados.get("sinal_vermelho", False)
+        sinal_vermelho = 1 if sinal_raw in [True, 1, "Sim", "sim", "1"] else 0
+        
+        parecer = str(dados.get("parecer_tecnico", "")).strip()
         
         payload_json = json.dumps(dados, ensure_ascii=False, default=str)
+        
+        tokens_in = int(dados.get("tokens_in", 0) or 0)
+        tokens_out = int(dados.get("tokens_out", 0) or 0)
+        custo_brl = float(dados.get("custo_brl", 0.0) or 0.0)
         
         with get_db_cursor(db_path) as cursor:
             cursor.execute(insert_sql, (
@@ -110,7 +122,10 @@ def salvar_avaliacao(dados: Dict[str, Any], db_path: str = DB_NAME) -> Tuple[boo
                 classificacao,
                 sinal_vermelho,
                 parecer,
-                payload_json
+                payload_json,
+                tokens_in,
+                tokens_out,
+                custo_brl
             ))
             
         return True, f"Avaliação de '{nome}' gravada com sucesso no banco de dados!"
@@ -121,15 +136,27 @@ def salvar_avaliacao(dados: Dict[str, Any], db_path: str = DB_NAME) -> Tuple[boo
 def listar_candidatos_salvos(db_path: str = DB_NAME) -> List[Dict[str, Any]]:
     """Retorna a lista resumida de todas as avaliações para seleção e consulta."""
     try:
+        init_db(db_path)
         query = """
-        SELECT id, data_registro, nome_candidato, cargo_pretendido, indice_global, sinal_vermelho, classificacao_final 
+        SELECT id, data_registro, nome_candidato, cargo_pretendido, nivel_hierarquico, indice_global, sinal_vermelho, classificacao_final, payload_completo_json
         FROM avaliacoes 
         ORDER BY id DESC
         """
         with get_db_cursor(db_path) as cursor:
             cursor.execute(query)
             rows = cursor.fetchall()
-            return [dict(row) for row in rows]
+            resultado = []
+            for r in rows:
+                item = dict(r)
+                if item.get("payload_completo_json"):
+                    try:
+                        item["payload"] = json.loads(item["payload_completo_json"])
+                    except Exception:
+                        item["payload"] = {}
+                else:
+                    item["payload"] = {}
+                resultado.append(item)
+            return resultado
     except Exception as e:
         print(f"[ERRO DB] Falha ao listar candidatos: {e}")
         return []
@@ -137,6 +164,7 @@ def listar_candidatos_salvos(db_path: str = DB_NAME) -> List[Dict[str, Any]]:
 def obter_avaliacao_por_id(avaliacao_id: int, db_path: str = DB_NAME) -> Optional[Dict[str, Any]]:
     """Recupera os dados completos de uma avaliação pelo ID."""
     try:
+        init_db(db_path)
         with get_db_cursor(db_path) as cursor:
             cursor.execute("SELECT * FROM avaliacoes WHERE id = ?", (avaliacao_id,))
             row = cursor.fetchone()
@@ -154,14 +182,11 @@ def obter_avaliacao_por_id(avaliacao_id: int, db_path: str = DB_NAME) -> Optiona
         return None
 
 def obter_historico_avaliacoes(db_path: str = DB_NAME):
-    """Retorna o histórico completo de avaliações em um DataFrame Pandas com suporte a esquemas legados e atuais."""
+    """Retorna o histórico completo de avaliações em um DataFrame Pandas devidamente formatado."""
     import pandas as pd
     try:
+        init_db(db_path)
         with get_db_cursor(db_path) as cursor:
-            cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='avaliacoes'")
-            if not cursor.fetchone():
-                return pd.DataFrame()
-            
             cursor.execute("SELECT * FROM avaliacoes ORDER BY id DESC")
             rows = cursor.fetchall()
             if not rows:
@@ -180,10 +205,45 @@ def obter_historico_avaliacoes(db_path: str = DB_NAME):
                 else:
                     df['vaga'] = 'N/A'
 
-            if 'nome' not in df.columns and 'nome_candidato' in df.columns:
-                df['nome'] = df['nome_candidato']
-            elif 'nome_candidato' not in df.columns and 'nome' in df.columns:
-                df['nome_candidato'] = df['nome']
+            if 'nome' not in df.columns:
+                if 'nome_candidato' in df.columns:
+                    df['nome'] = df['nome_candidato']
+                else:
+                    df['nome'] = 'N/A'
+
+            if 'nivel' not in df.columns:
+                if 'nivel_hierarquico' in df.columns:
+                    df['nivel'] = df['nivel_hierarquico']
+                else:
+                    df['nivel'] = 'N/A'
+
+            if 'data' not in df.columns:
+                if 'data_registro' in df.columns:
+                    df['data'] = df['data_registro']
+                else:
+                    df['data'] = ''
+
+            if 'pontos' not in df.columns:
+                if 'indice_global' in df.columns:
+                    df['pontos'] = df['indice_global']
+                elif 'pontuacao_fase1' in df.columns:
+                    df['pontos'] = df['pontuacao_fase1']
+                else:
+                    df['pontos'] = 0.0
+
+            if 'classificacao' not in df.columns:
+                if 'classificacao_final' in df.columns:
+                    df['classificacao'] = df['classificacao_final']
+                else:
+                    df['classificacao'] = ''
+
+            if 'arquétipo' not in df.columns:
+                if 'arquetipo_ativo' in df.columns:
+                    df['arquétipo'] = df['arquetipo_ativo']
+                elif 'arquetipo' in df.columns:
+                    df['arquétipo'] = df['arquetipo']
+                else:
+                    df['arquétipo'] = ''
                 
             return df
     except Exception as e:

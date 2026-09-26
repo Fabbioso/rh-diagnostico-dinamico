@@ -28,7 +28,7 @@ from core.constants import (
     FAIXAS_DELIBERACAO,
     COMPETENCIAS_FASE_1,
 )
-from services.database_service import init_db, salvar_avaliacao, listar_candidatos_salvos, obter_avaliacao_por_id
+from services.database_service import init_db, salvar_avaliacao, listar_candidatos_salvos, obter_avaliacao_por_id, obter_historico_avaliacoes
 from services.ai_service import configurar_gemini, gerar_analise_fase1, gerar_deliberacao_fase3
 from services.scoring_service import sortear_cartas_fase1, calcular_pontuacao_fase1, calcular_pontuacao_fase2, calcular_indice_global_integrado
 # Configuração inicial da página
@@ -1589,20 +1589,27 @@ with tab3:
                 )
             with col_a2:
                 if st.button("💾 Salvar no Banco Dinâmico (SQLite)", use_container_width=True, key="salvar_sqlite"):
+                    # Telemetria e consumo acumulado da IA para a avaliação ativa
+                    cost_info_key = f"cost_{chave_analise_ia(c_nome, c_vaga)}"
+                    meta_telemetria = st.session_state.get(cost_info_key, {})
+
                     dados_para_salvar = {
-                        "nome": st.session_state.get("candidato_nome", ""),
-                        "cargo": st.session_state.get("candidato_cargo", ""),
-                        "nivel": st.session_state.get("candidato_nivel", ""),
-                        "arquetipo": st.session_state.get("arquetipo_ativo", ""),
-                        "pontuacao_fase1": st.session_state.get("pontuacao_fase1", 0.0),
-                        "aderencia_fase1": st.session_state.get("aderencia_fase1", 0.0),
-                        "pontuacao_fase2": st.session_state.get("pontuacao_fase2", 0.0),
-                        "aderencia_fase2": st.session_state.get("aderencia_fase2", 0.0),
-                        "indice_global": st.session_state.get("indice_global", 0.0),
-                        "classificacao": st.session_state.get("classificacao_final", ""),
-                        "sinal_vermelho": st.session_state.get("sinal_vermelho", False),
-                        "parecer_tecnico": st.session_state.get("parecer_tecnico", ""),
-                        "notas_casas": st.session_state.get("notas_casas", {}),
+                        "nome": c_nome,
+                        "cargo": c_vaga,
+                        "nivel": c_nivel,
+                        "arquetipo": arq_ativo_ficha,
+                        "pontuacao_fase1": total_t1,
+                        "aderencia_fase1": perc_t1,
+                        "pontuacao_fase2": total_t2_ajustado,
+                        "aderencia_fase2": perc_t2,
+                        "indice_global": indice_global,
+                        "classificacao": classificacao,
+                        "sinal_vermelho": sinal_ativo,
+                        "parecer_tecnico": texto_conclusao_f3,
+                        "notas_casas": notas_fase1_f3,
+                        "tokens_in": meta_telemetria.get("tokens_in", 0),
+                        "tokens_out": meta_telemetria.get("tokens_out", 0),
+                        "custo_brl": meta_telemetria.get("custo_brl", 0.0),
                     }
                     
                     sucesso, mensagem = salvar_avaliacao(dados_para_salvar)
@@ -1633,20 +1640,23 @@ with tab3:
                 st.write(rf"- **{tnom} (Tarot Casa {tn})** $\leftrightarrow$ **{adesc}**: Cúspide: **{s_info}**{clima_info}")
 
         with sub_t3:
-            with sqlite3.connect("rh_diagnostico_dinamico.db") as conn_db:
-                df_hist = pd.read_sql_query("SELECT id, nome, vaga, nivel, data, pontos, classificacao, arquétipo, tokens_in, tokens_out, custo_brl FROM avaliacoes", conn_db)
+            df_hist = obter_historico_avaliacoes()
             if not df_hist.empty:
-                total_gastos = df_hist["custo_brl"].sum()
-                max_gasto = df_hist["custo_brl"].max()
-                total_tokens = df_hist["tokens_in"].sum() + df_hist["tokens_out"].sum()
+                cols_exibicao = ["id", "nome", "vaga", "nivel", "data", "pontos", "classificacao", "arquétipo", "tokens_in", "tokens_out", "custo_brl"]
+                cols_validas = [c for c in cols_exibicao if c in df_hist.columns]
+                df_view = df_hist[cols_validas].copy()
+
+                total_gastos = df_hist["custo_brl"].sum() if "custo_brl" in df_hist.columns else 0.0
+                max_gasto = df_hist["custo_brl"].max() if "custo_brl" in df_hist.columns else 0.0
+                total_tokens = (df_hist["tokens_in"].sum() + df_hist["tokens_out"].sum()) if ("tokens_in" in df_hist.columns and "tokens_out" in df_hist.columns) else 0
 
                 cm1, cm2, cm3, cm4 = st.columns(4)
                 with cm1: st.metric("Avaliações Registradas", f"{len(df_hist)}")
-                with cm2: st.metric("Tokens Totais", f"{total_tokens:,}")
+                with cm2: st.metric("Tokens Totais", f"{int(total_tokens):,}")
                 with cm3: st.metric("Gasto Total Acumulado", f"R$ {total_gastos:.4f}")
                 with cm4: st.metric("Gasto Máximo / Avaliação", f"R$ {max_gasto:.4f}")
 
                 st.markdown("---")
-                st.dataframe(df_hist, use_container_width=True, hide_index=True)
+                st.dataframe(df_view, use_container_width=True, hide_index=True)
             else:
                 st.info("Nenhum registro no banco dinâmico.")
