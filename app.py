@@ -17,6 +17,7 @@ import reports.gerar_pdf_fase3
 from reports.gerar_pdf import gerar_pdf_profissional
 from reports.gerar_pdf_fase2 import gerar_laudo_fase2_pdf
 from reports.gerar_pdf_fase3 import gerar_laudo_fase3_pdf
+from reports.gerar_pdf_fase1 import gerar_ficha_pdf_fase1
 
 importlib.reload(reports.gerar_pdf_fase3)
 from core.constants import (
@@ -992,370 +993,53 @@ with tab1:
             f"({c_meta['tokens_total']} total) — **Custo Estimado:** US$ {c_meta['custo_usd']:.5f} (R$ {c_meta['custo_brl']:.4f})"
         )
 
-    def gerar_ficha_pdf_fase1(c_nome, c_vaga, total_pts, classif, sinal_vermelho_val):
-        veto_governanca = sinal_vermelho_val in ["Sim", True]
-        classif = "Não Recomendado (Veto de Governança)" if veto_governanca else classif
-
-        cache_key_pdf = chave_analise_ia(c_nome, c_vaga)
-        texto_ia_doc = st.session_state.get(cache_key_pdf)
-        if not texto_ia_doc:
-            texto_ia_doc = obter_ou_gerar_analise_ia(
-                c_nome,
-                c_vaga,
-                arq_nome,
-                classificacao_f1=classif,
-                sinal_vermelho_f1=veto_governanca
-            )
-        pdf = FPDF()
-        pdf.add_page()
-        pdf.set_auto_page_break(auto=False)
-
-        pdf.set_font("helvetica", "B", 11)
-        pdf.cell(0, 6, sanitizar_pdf("FICHA DE AVALIAÇÃO PARA RECRUTAMENTO"), 0, 1, "C")
-        pdf.set_font("helvetica", "I", 8)
-        pdf.cell(0, 5, sanitizar_pdf("RELATÓRIO DE AVALIAÇÃO PSICOMÉTRICA E COMPORTAMENTAL (MÉTODO 8 CASAS)"), 0, 1, "C")
-        pdf.ln(3)
-
-        pdf.set_font("helvetica", "B", 8)
-        pdf.set_fill_color(245, 247, 250)
-        pdf.cell(0, 5.5, sanitizar_pdf(f"   CANDIDATO(A): {c_nome.upper() if c_nome else 'NÃO INFORMADO'}"), 1, 1, "L", True)
-        pdf.cell(0, 5.5, sanitizar_pdf(f"   VAGA / CARGO: {c_vaga.upper() if c_vaga else 'NÃO INFORMADA'} ({nivel_hierarquico.upper()})         DATA: {datetime.now().strftime('%d/%m/%Y')}"), 1, 1, "L", True)
-        pdf.ln(3)
-
-        w_pos = 8
-        w_comp = 28
-        w_cart = 62
-        w_nota = 10
-        w_sint = 82
-
-        pdf.set_font("helvetica", "B", 7.5)
-        pdf.set_fill_color(230, 235, 240)
-        pdf.cell(w_pos, 6, "POS", 1, 0, "C", True)
-        pdf.cell(w_comp, 6, "COMPETÊNCIA", 1, 0, "L", True)
-        pdf.cell(w_cart, 6, "CARTAS (CENTRAL / NEGATIVA / POSITIVA)", 1, 0, "L", True)
-        pdf.cell(w_nota, 6, "NOTA", 1, 0, "C", True)
-        pdf.cell(w_sint, 6, "RESUMO DA LEITURA", 1, 1, "L", True)
-
-        competencias_nomes = [
-            "Hard Skills", "Soft Skills", "Fit Cultural",
-            "Desafios", "Potencial Futuro", "Equilíbrio Emocional",
-            "Saúde Psicológica", "Confiabilidade e Ética"
-        ]
-
-        cursor_y = pdf.get_y()
-
-        for i in range(1, 9):
-            c_cent = st.session_state.get(f"t_central_{i}", "-")
-            c_neg = st.session_state.get(f"t_negativa_{i}", "-")
-            c_pos = st.session_state.get(f"t_positiva_{i}", "-")
-            nota = st.session_state.get(f"t_pontos_{i}", 3)
-
-            cartas_txt = f"Carta Central: {c_cent}\nCarta Negativa: {c_neg}\nCarta Positiva: {c_pos}"
-            obs_txt = extrair_sintese_competencia(texto_ia_doc, i, competencias_nomes[i-1])
-
-            linhas_comp = quebrar_texto_em_linhas(pdf, competencias_nomes[i-1], w_comp, tam_fonte=7)
-            linhas_cart = quebrar_texto_em_linhas(pdf, cartas_txt, w_cart, tam_fonte=6.8)
-            linhas_sint = quebrar_texto_em_linhas(pdf, obs_txt, w_sint, tam_fonte=6.8)
-
-            max_linhas = max(len(linhas_comp), len(linhas_cart), len(linhas_sint), 3)
-            h_linha = max(14.0, float(max_linhas * 3.4) + 2.8)
-
-            pdf.rect(10, cursor_y, w_pos, h_linha)
-            pdf.rect(10 + w_pos, cursor_y, w_comp, h_linha)
-            pdf.rect(10 + w_pos + w_comp, cursor_y, w_cart, h_linha)
-            pdf.rect(10 + w_pos + w_comp + w_cart, cursor_y, w_nota, h_linha)
-            pdf.rect(10 + w_pos + w_comp + w_cart + w_nota, cursor_y, w_sint, h_linha)
-
-            pdf.set_font("helvetica", "", 7)
-            pdf.text(10 + (w_pos / 2) - 1.2, cursor_y + (h_linha / 2) + 1.2, str(i))
-
-            for idx_c, l_txt in enumerate(linhas_comp):
-                pdf.text(10 + w_pos + 1.2, cursor_y + 3.8 + (idx_c * 3.2), sanitizar_pdf(l_txt))
-
-            pdf.set_font("helvetica", "", 6.8)
-            for idx_cr, l_txt in enumerate(linhas_cart):
-                pdf.text(10 + w_pos + w_comp + 1.2, cursor_y + 3.8 + (idx_cr * 3.0), sanitizar_pdf(l_txt))
-
-            pdf.set_font("helvetica", "", 7)
-            pdf.text(10 + w_pos + w_comp + w_cart + (w_nota / 2) - 1.2, cursor_y + (h_linha / 2) + 1.2, str(nota))
-
-            pdf.set_font("helvetica", "", 6.8)
-            for idx_s, l_txt in enumerate(linhas_sint):
-                pdf.text(10 + w_pos + w_comp + w_cart + w_nota + 1.2, cursor_y + 3.8 + (idx_s * 3.0), sanitizar_pdf(l_txt))
-
-            cursor_y += h_linha
-            pdf.set_xy(10, cursor_y)
-
-        pdf.ln(3)
-
-        pdf.set_font("helvetica", "B", 8)
-        pdf.cell(0, 5, sanitizar_pdf(f"PONTUAÇÃO TOTAL: {total_pts} / 40  |  CLASSIFICAÇÃO: {classif}  |  SINAL VERMELHO: {sinal_vermelho_val}"), 0, 1, "L")
-        pdf.ln(1.5)
-
-        pdf.set_font("helvetica", "B", 8)
-        pdf.cell(0, 4.5, sanitizar_pdf("PARECER FINAL DO AVALIADOR:"), 0, 1)
-        pdf.set_font("helvetica", "", 7.5)
-        notas_competencias = {
-            competencias_nomes[idx - 1]: float(st.session_state.get(f"t_pontos_{idx}", 3))
-            for idx in range(1, 9)
-        }
-        maiores_forcas = sorted(notas_competencias.items(), key=lambda item: item[1], reverse=True)[:2]
-        focos_ressalva = sorted(notas_competencias.items(), key=lambda item: item[1])[:2]
-        forcas_txt = ", ".join(f"{nome} ({nota:.0f}/5)" for nome, nota in maiores_forcas)
-        ressalvas_txt = ", ".join(f"{nome} ({nota:.0f}/5)" for nome, nota in focos_ressalva)
-        deliberacao_txt = (
-            "deliberação desfavorável, com veto de governança"
-            if veto_governanca else
-            f"deliberação de {classif.lower()}"
-        )
-        if veto_governanca:
-            parecer_ficha = (
-                f"SUMÁRIO EXECUTIVO: Para a vaga de {c_vaga or 'Geral'} ({nivel_hierarquico}), o perfil alcançou "
-                f"{total_pts} / 40 pontos ({perc_t1:.1f}% de aderência). Maiores forças: {forcas_txt}. "
-                f"Focos de ressalva ou veto: {ressalvas_txt}. A {deliberacao_txt} decorre de risco crítico "
-                f"em Equilíbrio Emocional, Saúde Psicológica ou Confiabilidade e Ética. Classificação: '{classif}'."
-            )
-        else:
-            parecer_ficha = (
-                f"SUMÁRIO EXECUTIVO: Para a vaga de {c_vaga or 'Geral'} ({nivel_hierarquico}), o perfil alcançou "
-                f"{total_pts} / 40 pontos ({perc_t1:.1f}% de aderência). Maiores forças: {forcas_txt}. "
-                f"Focos de ressalva: {ressalvas_txt}. A avaliação sustenta {deliberacao_txt}, "
-                f"considerando o alinhamento comportamental e estrutural mapeado."
-            )
-        pdf.set_fill_color(248, 249, 250)
-        pdf.set_draw_color(200, 205, 210)
-        pdf.multi_cell(0, 4.2, sanitizar_pdf(parecer_ficha), border=1, fill=True)
-
-        # Página 2 em diante: Análise Qualitativa
-        pdf.add_page()
-        pdf.set_auto_page_break(auto=True, margin=15)
-        pdf.set_font("helvetica", "B", 10)
-        pdf.cell(0, 6, sanitizar_pdf("ANÁLISE QUALITATIVA DAS COMPETÊNCIAS"), 0, 1, "L")
-        pdf.ln(2)
-
-        def renderizar_item_analise(pdf, label_prefix, nome_carta, texto_corpo, largura_bloco):
-            """Garante 'RÓTULO: NOME DA CARTA - ' em negrito estrito."""
-            if not nome_carta:
-                cabecalho_negrito = f"{label_prefix}: "
-            else:
-                cabecalho_negrito = f"{label_prefix}: {nome_carta} - "
-
-            pdf.set_font("helvetica", "B", 7.5)
-            w_cabecalho = pdf.get_string_width(cabecalho_negrito)
-
-            palavras = str(texto_corpo).strip().split(" ")
-            linhas_geradas = []
-            linha_atual = ""
-            primeira_linha = True
-
-            for p in palavras:
-                if not p:
-                    continue
-                largura_limite = (largura_bloco - w_cabecalho - 2) if primeira_linha else (largura_bloco - 2)
-                teste = f"{linha_atual} {p}".strip() if linha_atual else p
-
-                pdf.set_font("helvetica", "", 7.5)
-                if pdf.get_string_width(teste) <= largura_limite:
-                    linha_atual = teste
-                else:
-                    if linha_atual:
-                        linhas_geradas.append(linha_atual)
-                        primeira_linha = False
-                    linha_atual = p
-            if linha_atual:
-                linhas_geradas.append(linha_atual)
-
-            x_ini = pdf.get_x()
-            y_ini = pdf.get_y()
-
-            pdf.set_font("helvetica", "B", 7.5)
-            pdf.text(x_ini, y_ini + 3.0, sanitizar_pdf(cabecalho_negrito))
-
-            pdf.set_font("helvetica", "", 7.5)
-            if linhas_geradas:
-                pdf.text(x_ini + w_cabecalho + 0.5, y_ini + 3.0, sanitizar_pdf(linhas_geradas[0]))
-                for idx_sub, resto_linha in enumerate(linhas_geradas[1:], start=1):
-                    pdf.text(x_ini, y_ini + 3.0 + (idx_sub * 3.4), sanitizar_pdf(resto_linha))
-                h_ocupada = float(len(linhas_geradas) * 3.4)
-            else:
-                h_ocupada = 3.4
-
-            pdf.set_xy(x_ini, y_ini + h_ocupada + 1.2)
-            return h_ocupada + 1.2
-
-        for i in range(1, 9):
-            desc_central = ""
-            desc_negativa = ""
-            desc_positiva = ""
-            resumo = ""
-
-            nota_comp = st.session_state.get(f"t_pontos_{i}", 3)
-            c_cent = st.session_state.get(f"t_central_{i}", "-")
-            c_neg = st.session_state.get(f"t_negativa_{i}", "-")
-            c_pos = st.session_state.get(f"t_positiva_{i}", "-")
-
-            cartas_str = f"Carta Central: {c_cent}  |  Carta Negativa: {c_neg}  |  Carta Positiva: {c_pos}"
-            conteudo_comp = extrair_secao_competencia(texto_ia_doc, i, competencias_nomes[i-1])
-
-            dados_competencia = st.session_state.get(f"analise_fase1_casa_{i}")
-            tem_conteudo = bool(dados_competencia and any(str(dados_competencia.get(k, "")).strip() for k in ["central_desc", "negativa_desc", "positiva_desc", "resumo"]))
-            if not tem_conteudo:
-                dados_competencia = extrair_descricao_competencia(texto_ia_doc, i, competencias_nomes[i-1])
-                desc_central = remover_nome_carta_descricao(dados_competencia.get("central", ""), c_cent)
-                desc_negativa = remover_nome_carta_descricao(dados_competencia.get("negativa", ""), c_neg)
-                desc_positiva = remover_nome_carta_descricao(dados_competencia.get("positiva", ""), c_pos)
-                resumo = dados_competencia.get("resumo", "")
-            else:
-                desc_central = dados_competencia.get("central_desc", "") or remover_nome_carta_descricao(dados_competencia.get("central", ""), c_cent)
-                desc_negativa = dados_competencia.get("negativa_desc", "") or remover_nome_carta_descricao(dados_competencia.get("negativa", ""), c_neg)
-                desc_positiva = dados_competencia.get("positiva_desc", "") or remover_nome_carta_descricao(dados_competencia.get("positiva", ""), c_pos)
-                resumo = dados_competencia.get("resumo", "")
-
-            blocos_parsed = []
-            c_nome_comp = competencias_nomes[i-1] if (i-1) < len(competencias_nomes) else "Competência"
-            blocos_parsed.append(("CARTA CENTRAL", c_cent, desc_central if desc_central else f"Análise central desenvolvida para o arcano {c_cent} no contexto de {c_nome_comp}."))
-            blocos_parsed.append(("CARTA NEGATIVA", c_neg, desc_negativa if desc_negativa else f"Ponto de ressalva e vulnerabilidade mapeado através do arcano {c_neg}."))
-            blocos_parsed.append(("CARTA POSITIVA", c_pos, desc_positiva if desc_positiva else f"Fator de alavancagem e potencial comportamental alinhado ao arcano {c_pos}."))
-            blocos_parsed.append(("RESUMO DA LEITURA", "", resumo if resumo else f"Síntese metodológica integrada para {c_nome_comp}."))
-
-            pdf.set_font("helvetica", "", 7.5)
-            h_corpo_total = 0.0
-            for r_txt, c_nome_item, c_txt in blocos_parsed:
-                prefixo_tam = f"{r_txt}: {c_nome_item} - " if c_nome_item else f"{r_txt}: "
-                w_tot = pdf.get_string_width(f"{prefixo_tam}{c_txt}")
-                linhas_bloco = max(1, math.ceil(w_tot / 184.0))
-                h_corpo_total += float(linhas_bloco * 3.4) + 1.5
-
-            h_total_card = 6.0 + 5.0 + h_corpo_total + 4.0
-
-            if pdf.get_y() + h_total_card > 275:
-                pdf.add_page()
-
-            y_box = pdf.get_y()
-            pdf.set_draw_color(200, 205, 212)
-            pdf.rect(10, y_box, 190, 6.0 + 5.0 + h_corpo_total + 2.0)
-
-            # Cabeçalho da competência
-            pdf.set_font("helvetica", "B", 8.5)
-            pdf.set_fill_color(240, 243, 246)
-            pdf.cell(0, 6.0, sanitizar_pdf(f"  {i}. {competencias_nomes[i-1]} (Nota: {nota_comp}/5)"), 0, 1, "L", True)
-
-            # Subtítulo com os arcanos
-            pdf.set_font("helvetica", "I", 7.5)
-            pdf.set_xy(13, y_box + 6.2)
-            pdf.cell(184, 4.8, sanitizar_pdf(cartas_str), 0, 1, "L", False)
-
-            # Renderização de cada item com Caixa Alta e Negrito
-            pdf.set_xy(13, y_box + 11.5)
-            for r_txt, c_nome_item, c_txt in blocos_parsed:
-                if r_txt:
-                    renderizar_item_analise(pdf, r_txt, c_nome_item, c_txt, 184)
-                else:
-                    pdf.set_font("helvetica", "", 7.5)
-                    pdf.multi_cell(184, 3.6, sanitizar_pdf(c_txt), 0, "L", False)
-
-            pdf.set_xy(10, y_box + 6.0 + 5.0 + h_corpo_total + 5.0)
-
-        raw_c = ""
-        linhas_ia = str(texto_ia_doc).splitlines()
-        capturando_justificativa = False
-        buffer_justificativa = []
-
-        for l_orig in linhas_ia:
-            l_limpa = re.sub(r"[\*\_#`]", "", l_orig).strip()
-            l_upper = l_limpa.upper()
-
-            if "JUSTIFICATIVA EXECUTIVA" in l_upper:
-                capturando_justificativa = True
-                partes = re.split(r"JUSTIFICATIVA\s+EXECUTIVA\s*[:\-–—]", l_limpa, flags=re.IGNORECASE)
-                if len(partes) > 1 and partes[1].strip():
-                    buffer_justificativa.append(partes[1].strip())
-                continue
-
-            if capturando_justificativa:
-                if any(l_upper.startswith(pref) for pref in ["FORÇAS PRINCIPAIS", "FORCAS PRINCIPAIS", "FOCOS DE RESSALVA", "PARECER FINAL", "---"]):
-                    break
-                if l_limpa:
-                    buffer_justificativa.append(l_limpa)
-
-        if buffer_justificativa:
-            raw_c = " ".join(buffer_justificativa).strip()
-
-        if not raw_c:
-            m_concl = re.search(
-                r"(?:CONCLUS[ÃÃO]|JUSTIFICATIVA\s*EXECUTIVA)(.*?)(?=(?:For[çc]as\s*principais|Focos\s*de\s*ressalva|\Z))",
-                texto_ia_doc,
-                re.DOTALL | re.IGNORECASE,
-            )
-            if m_concl:
-                cand = m_concl.group(1).strip()
-                cand = re.sub(r"^[\s\S]*?JUSTIFICATIVA\s*EXECUTIVA\s*[:\-\–\—]*", "", cand, flags=re.IGNORECASE)
-                cand = re.sub(r"^[\s\S]*?PARECER\s*FINAL\s*:[^\n]+\n*", "", cand, flags=re.IGNORECASE)
-                cand = re.sub(r"[\*\_#`]", "", cand).strip()
-                if len(cand) > 30:
-                    raw_c = re.sub(r"\s+", " ", cand).strip()
-
-        if veto_governanca:
-            classif_final = "Não Recomendado (Veto de Governança)"
-            if raw_c:
-                texto_conclusao = (
-                    f"PARECER FINAL: {classif_final}.\n"
-                    f"JUSTIFICATIVA EXECUTIVA: {raw_c}\n"
-                    f"Forças principais: {forcas_txt}. Focos de ressalva ou veto: {ressalvas_txt}."
-                )
-            else:
-                texto_conclusao = (
-                    f"PARECER FINAL: {classif_final}.\n"
-                    f"JUSTIFICATIVA EXECUTIVA: Embora o candidato tenha somado {total_pts} pontos "
-                    f"({perc_t1:.1f}% de aderência), a candidatura foi vetada pelas regras de integridade e governança corporativa. "
-                    f"As maiores forças identificadas foram {forcas_txt}; os focos de ressalva ou veto foram {ressalvas_txt}. "
-                    "Riscos críticos em bases emocionais, psíquicas ou éticas representam ponto de ruptura para a governança da posição."
-                )
-        elif raw_c:
-            classif_limpo = str(classif).rstrip(".")
-            texto_conclusao = (
-                f"PARECER FINAL: {classif_limpo}.\n"
-                f"JUSTIFICATIVA EXECUTIVA: {raw_c}\n"
-                f"Forças principais: {forcas_txt}. Focos de ressalva: {ressalvas_txt}."
-            )
-        else:
-            texto_conclusao = (
-                f"PARECER FINAL: {classif}.\n"
-                f"JUSTIFICATIVA EXECUTIVA: O candidato obteve {total_pts} pontos ({perc_t1:.1f}% de aderência). "
-                f"As competências de maior força foram {forcas_txt}; os principais focos de ressalva são {ressalvas_txt}. "
-                "A deliberação considera o equilíbrio entre desempenho, riscos mapeados e aderência à vaga."
-            )
-
-        pdf.set_font("helvetica", "", 7.5)
-        parags_conc = [p.strip() for p in texto_conclusao.split("\n") if p.strip()]
-        linhas_totais_conc = sum([max(1, math.ceil(pdf.get_string_width(p) / 175.0)) for p in parags_conc]) + len(parags_conc)
-        h_estimada_conc = 6.0 + float(linhas_totais_conc * 3.6) + 8.0
-
-        if pdf.get_y() + h_estimada_conc > 275:
-            pdf.add_page()
-
-        y_conc = pdf.get_y()
-        pdf.set_font("helvetica", "B", 9)
-        pdf.set_fill_color(230, 235, 242)
-        pdf.set_xy(10, y_conc)
-        pdf.cell(190, 6.0, sanitizar_pdf("  CONCLUSÃO E RECOMENDAÇÃO FINAL"), 0, 1, "L", True)
-
-        pdf.set_font("helvetica", "", 7.5)
-        pdf.set_xy(13, y_conc + 7.5)
-        pdf.multi_cell(184, 3.6, sanitizar_pdf(texto_conclusao), 0, "L", False)
-
-        y_fim_conc = pdf.get_y() + 3.0
-        altura_final_box = max(18.0, y_fim_conc - y_conc)
-        pdf.set_draw_color(190, 195, 202)
-        pdf.rect(10, y_conc, 190, altura_final_box)
-        pdf.set_y(y_conc + altura_final_box + 4.0)
-
-        res = pdf.output(dest="S")
-        return res.encode("latin1") if isinstance(res, str) else bytes(res)
-
-# Fora da função def gerar_ficha_pdf_fase1 (4 espaços no if e no elif):
     if resultado_calculado and casas_preenchidas and cache_key_check in st.session_state and st.session_state.get(cache_key_check):
-        pdf_stream = gerar_ficha_pdf_fase1(c_nome_val, vaga_cargo, total_t1, classificacao_f1, sinal_vermelho_f1)
+        texto_ia_doc = st.session_state.get(cache_key_check) or ""
+        dados_casas_f1_pdf = []
+        for idx_c in range(1, 9):
+            c_cent_v = st.session_state.get(f"t_central_{idx_c}", "-")
+            c_neg_v = st.session_state.get(f"t_negativa_{idx_c}", "-")
+            c_pos_v = st.session_state.get(f"t_positiva_{idx_c}", "-")
+
+            dados_competencia = st.session_state.get(f"analise_fase1_casa_{idx_c}")
+            if not dados_competencia:
+                dados_competencia = extrair_descricao_competencia(texto_ia_doc, idx_c, COMPETENCIAS_FASE_1[idx_c - 1])
+                desc_cent = remover_nome_carta_descricao(dados_competencia.get("central", ""), c_cent_v)
+                desc_neg = remover_nome_carta_descricao(dados_competencia.get("negativa", ""), c_neg_v)
+                desc_pos = remover_nome_carta_descricao(dados_competencia.get("positiva", ""), c_pos_v)
+            else:
+                desc_cent = dados_competencia.get("central_desc", "") or remover_nome_carta_descricao(dados_competencia.get("central", ""), c_cent_v)
+                desc_neg = dados_competencia.get("negativa_desc", "") or remover_nome_carta_descricao(dados_competencia.get("negativa", ""), c_neg_v)
+                desc_pos = dados_competencia.get("positiva_desc", "") or remover_nome_carta_descricao(dados_competencia.get("positiva", ""), c_pos_v)
+
+            resumo_comp = (dados_competencia.get("resumo", "") if dados_competencia else "") or extrair_sintese_competencia(texto_ia_doc, idx_c, COMPETENCIAS_FASE_1[idx_c - 1])
+
+            dados_casas_f1_pdf.append({
+                "pos": idx_c,
+                "nome": COMPETENCIAS_FASE_1[idx_c - 1],
+                "central": c_cent_v,
+                "negativa": c_neg_v,
+                "positiva": c_pos_v,
+                "nota": st.session_state.get(f"t_pontos_{idx_c}", 3),
+                "desc_central": desc_cent,
+                "desc_negativa": desc_neg,
+                "desc_positiva": desc_pos,
+                "resumo": resumo_comp,
+            })
+
+        nivel_relatorio = nivel_hierarquico if "nivel_hierarquico" in locals() and nivel_hierarquico else "Pleno"
+
+        pdf_stream = gerar_ficha_pdf_fase1(
+            c_nome=c_nome_val,
+            c_vaga=vaga_cargo,
+            c_nivel=nivel_relatorio,
+            total_pts=total_t1,
+            perc_t1=perc_t1,
+            classif=classificacao_f1,
+            sinal_vermelho_val=sinal_vermelho_f1,
+            texto_ia_doc=texto_ia_doc,
+            dados_casas=dados_casas_f1_pdf,
+        )
         st.download_button(
             label="📥 Baixar Ficha de Avaliação Completa em PDF",
             data=pdf_stream,
