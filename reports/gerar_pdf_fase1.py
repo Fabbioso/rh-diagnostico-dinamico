@@ -11,12 +11,39 @@ def sanitizar_pdf(texto: Any) -> str:
     if not texto:
         return ""
     txt = str(texto)
+    
+    # 1. Tratamento e substituição de comandos LaTeX comuns
+    txt = re.sub(r"\$\$(.*?)\$\$", r"\1", txt, flags=re.DOTALL)
     txt = re.sub(r"\$([^\$]+)\$", r"\1", txt)
     txt = txt.replace("$", "")
+    
+    latex_replaces = {
+        r"\\le\b": "<=",
+        r"\\leq\b": "<=",
+        r"\\ge\b": ">=",
+        r"\\geq\b": ">=",
+        r"\\times\b": "x",
+        r"\\pm\b": "+/-",
+        r"\\approx\b": "~",
+        r"\\sim\b": "~",
+        r"\\%": "%",
+        r"\\&": "&",
+        r"\\_": "_",
+    }
+    for padrao, subst in latex_replaces.items():
+        txt = re.sub(padrao, subst, txt)
+        
+    # Remove comandos LaTeX do tipo \textbf{texto}, \textit{texto}, \frac{a}{b} -> a/b
+    txt = re.sub(r"\\frac\{([^}]+)\}\{([^}]+)\}", r"\1/\2", txt)
+    txt = re.sub(r"\\[a-zA-Z]+\{([^}]*)\}", r"\1", txt)
+    txt = txt.replace("\\", "")
+
+    # 2. Limpeza de Markdown
     txt = re.sub(r"^#{1,6}\s*", "", txt, flags=re.MULTILINE)
     txt = re.sub(r"\*{1,3}(.*?)\*{1,3}", r"\1", txt)
     txt = re.sub(r"_{1,3}(.*?)_{1,3}", r"\1", txt)
     txt = txt.replace("**", "").replace("*", "")
+
     subs = {
         "—": "-", "–": "-", "“": '"', "”": '"', "‘": "'", "’": "'",
         "•": "-", "…": "...", "→": "->", "←": "<-", "º": chr(186), "ª": "a",
@@ -24,9 +51,11 @@ def sanitizar_pdf(texto: Any) -> str:
     }
     for orig, dest in subs.items():
         txt = txt.replace(orig, dest)
+
     txt = txt.replace("°", chr(186)).replace("deg", chr(186))
     txt = re.sub(r"[ \t]+", " ", txt)
     txt = re.sub(r"[^\x00-\xFF]", "", txt)
+
     try:
         return txt.encode("latin-1", "replace").decode("latin-1")
     except Exception:
@@ -54,7 +83,7 @@ def quebrar_texto_em_linhas(pdf: FPDF, texto: Any, largura_max: float, tam_fonte
     return linhas if linhas else ["-"]
 
 def renderizar_item_analise(pdf: FPDF, label_prefix: str, nome_carta: str, texto_corpo: str, largura_bloco: float) -> float:
-    """Garante 'RÓTULO: NOME DA CARTA - ' em negrito estrito."""
+    """Garante 'RÓTULO: NOME DA CARTA - ' em negrito estrito e corpo proporcional."""
     if not nome_carta:
         cabecalho_negrito = f"{label_prefix}: "
     else:
@@ -94,8 +123,8 @@ def renderizar_item_analise(pdf: FPDF, label_prefix: str, nome_carta: str, texto
     pdf.set_font("helvetica", "", 7.5)
     if linhas_geradas:
         pdf.text(x_ini + w_cabecalho + 0.5, y_ini + 3.0, sanitizar_pdf(linhas_geradas[0]))
-        for idx_sub, resto_linha in enumerate(linhas_geradas[1:], start=1):
-            pdf.text(x_ini, y_ini + 3.0 + (idx_sub * 3.4), sanitizar_pdf(resto_linha))
+        for idx_rest, l_resto in enumerate(linhas_geradas[1:], start=1):
+            pdf.text(x_ini, y_ini + 3.0 + (idx_rest * 3.4), sanitizar_pdf(l_resto))
         h_ocupada = float(len(linhas_geradas) * 3.4)
     else:
         h_ocupada = 3.4
@@ -286,10 +315,10 @@ def gerar_ficha_pdf_fase1(
     pdf.multi_cell(0, 4.2, sanitizar_pdf(parecer_ficha), border=1, fill=True)
 
     # =========================================================================
-    # PÁGINA 2 EM DIANTE: ANÁLISE QUALITATIVA DAS COMPETÊNCIAS
+    # PÁGINA 2 EM DIANTE: ANÁLISE QUALITATIVA DAS COMPETÊNCIAS (LAYOUT DINÂMICO)
     # =========================================================================
     pdf.add_page()
-    pdf.set_auto_page_break(auto=True, margin=15)
+    pdf.set_auto_page_break(auto=False)
     pdf.set_font("helvetica", "B", 10)
     pdf.cell(0, 6, sanitizar_pdf("ANÁLISE QUALITATIVA DAS COMPETÊNCIAS"), border=0, align="L", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
     pdf.ln(2)
@@ -316,43 +345,62 @@ def gerar_ficha_pdf_fase1(
             ("RESUMO DA LEITURA", "", resumo),
         ]
 
+        # 1. Pré-cálculo com simulação exata de quebra de linhas para evitar sobreposição
         pdf.set_font("helvetica", "", 7.5)
         h_corpo_total = 0.0
         for r_txt, c_nome_item, c_txt in blocos_parsed:
-            prefixo_tam = f"{r_txt}: {c_nome_item} - " if c_nome_item else f"{r_txt}: "
-            w_tot = pdf.get_string_width(f"{prefixo_tam}{c_txt}")
-            linhas_bloco = max(1, math.ceil(w_tot / 184.0))
-            h_corpo_total += float(linhas_bloco * 3.4) + 1.5
+            pref = f"{r_txt}: {c_nome_item} - " if c_nome_item else f"{r_txt}: "
+            w_pref = pdf.get_string_width(pref)
+            palavras = str(c_txt).strip().split(" ")
+            linhas_cnt = 1
+            linha_atual = ""
+            primeira_linha = True
+            for p in palavras:
+                if not p:
+                    continue
+                w_lim = (184.0 - w_pref - 2.0) if primeira_linha else 182.0
+                teste = f"{linha_atual} {p}".strip() if linha_atual else p
+                if pdf.get_string_width(teste) <= w_lim:
+                    linha_atual = teste
+                else:
+                    if linha_atual:
+                        linhas_cnt += 1
+                        primeira_linha = False
+                    linha_atual = p
+            h_corpo_total += float(linhas_cnt * 3.4) + 1.2
 
-        h_total_card = 6.0 + 5.0 + h_corpo_total + 4.0
+        h_total_card = 6.0 + 5.0 + h_corpo_total + 3.0
 
         if pdf.get_y() + h_total_card > 275:
             pdf.add_page()
 
         y_box = pdf.get_y()
-        pdf.set_draw_color(200, 205, 212)
-        pdf.rect(10, y_box, 190, 6.0 + 5.0 + h_corpo_total + 2.0)
 
         # Cabeçalho da competência
         pdf.set_font("helvetica", "B", 8.5)
         pdf.set_fill_color(240, 243, 246)
-        pdf.cell(0, 6.0, sanitizar_pdf(f"  {num_pos}. {c_nome_comp} (Nota: {nota_comp}/5)"), border=0, align="L", fill=True, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+        pdf.cell(190, 6.0, sanitizar_pdf(f"  {num_pos}. {c_nome_comp} (Nota: {nota_comp}/5)"), border=0, align="L", fill=True, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
 
         # Subtítulo com os arcanos
         pdf.set_font("helvetica", "I", 7.5)
         pdf.set_xy(13, y_box + 6.2)
         pdf.cell(184, 4.8, sanitizar_pdf(cartas_str), border=0, align="L", fill=False, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
 
-        # Renderização dos blocos
+        # Renderização sequencial dos blocos textuais
         pdf.set_xy(13, y_box + 11.5)
         for r_txt, c_nome_item, c_txt in blocos_parsed:
-            if r_txt:
-                renderizar_item_analise(pdf, r_txt, c_nome_item, c_txt, 184)
-            else:
-                pdf.set_font("helvetica", "", 7.5)
-                pdf.multi_cell(184, 3.6, sanitizar_pdf(c_txt), 0, "L", False)
+            renderizar_item_analise(pdf, r_txt, c_nome_item, c_txt, 184)
 
-        pdf.set_xy(10, y_box + 6.0 + 5.0 + h_corpo_total + 5.0)
+        # Coordenada Y real final pós-renderização
+        y_final_card = pdf.get_y() + 1.5
+        altura_real_box = max(h_total_card, y_final_card - y_box)
+
+        # Desenha a borda externa respeitando a altura real atingida
+        pdf.set_draw_color(200, 205, 212)
+        pdf.rect(10, y_box, 190, altura_real_box)
+
+        # Posiciona para a próxima casa de forma totalmente segura
+        pdf.set_xy(10, y_box + altura_real_box + 3.5)
 
     # =========================================================================
     # CONCLUSÃO E RECOMENDAÇÃO FINAL
@@ -391,9 +439,8 @@ def gerar_ficha_pdf_fase1(
         )
 
     pdf.set_font("helvetica", "", 7.5)
-    parags_conc = [p.strip() for p in texto_conclusao.split("\n") if p.strip()]
-    linhas_totais_conc = sum([max(1, math.ceil(pdf.get_string_width(p) / 175.0)) for p in parags_conc]) + len(parags_conc)
-    h_estimada_conc = 6.0 + float(linhas_totais_conc * 3.6) + 8.0
+    linhas_conclusao = quebrar_texto_em_linhas(pdf, texto_conclusao, 184, tam_fonte=7.5)
+    h_estimada_conc = 6.0 + float(len(linhas_conclusao) * 3.8) + 8.0
 
     if pdf.get_y() + h_estimada_conc > 275:
         pdf.add_page()
