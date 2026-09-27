@@ -28,12 +28,12 @@ def get_db_cursor(db_path: str = DB_NAME):
         conn.close()
 
 def init_db(db_path: str = DB_NAME) -> None:
-    """Inicializa a tabela unificada de avaliações caso ela não exista."""
+    """Inicializa a tabela de avaliações e aplica migrações automáticas de colunas."""
     create_table_sql = """
     CREATE TABLE IF NOT EXISTS avaliacoes (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        data_registro TEXT NOT NULL,
-        nome_candidato TEXT NOT NULL,
+        data_registro TEXT,
+        nome_candidato TEXT,
         cargo_pretendido TEXT,
         nivel_hierarquico TEXT,
         arquetipo_ativo TEXT,
@@ -51,13 +51,38 @@ def init_db(db_path: str = DB_NAME) -> None:
         custo_brl REAL DEFAULT 0.0
     );
     """
+    colunas_obrigatorias = {
+        "data_registro": "TEXT",
+        "nome_candidato": "TEXT",
+        "cargo_pretendido": "TEXT",
+        "nivel_hierarquico": "TEXT",
+        "arquetipo_ativo": "TEXT",
+        "pontuacao_fase1": "REAL",
+        "aderencia_fase1": "REAL",
+        "pontuacao_fase2": "REAL",
+        "aderencia_fase2": "REAL",
+        "indice_global": "REAL",
+        "classificacao_final": "TEXT",
+        "sinal_vermelho": "INTEGER",
+        "parecer_tecnico": "TEXT",
+        "payload_completo_json": "TEXT",
+        "tokens_in": "INTEGER",
+        "tokens_out": "INTEGER",
+        "custo_brl": "REAL",
+    }
     with get_db_cursor(db_path) as cursor:
         cursor.execute(create_table_sql)
+        cursor.execute("PRAGMA table_info(avaliacoes);")
+        existentes = {row["name"] for row in cursor.fetchall()}
+        for col, tipo_def in colunas_obrigatorias.items():
+            if col not in existentes:
+                try:
+                    cursor.execute(f"ALTER TABLE avaliacoes ADD COLUMN {col} {tipo_def};")
+                except Exception as e:
+                    print(f"[AVISO DB] Falha ao adicionar coluna {col}: {e}")
 
 def salvar_avaliacao(dados: Dict[str, Any], db_path: str = DB_NAME) -> Tuple[bool, str]:
-    """
-    Persiste uma avaliação corporativa consolidada no SQLite com transação atômica.
-    """
+    """Persiste uma avaliação corporativa consolidada no SQLite com transação atômica."""
     insert_sql = """
     INSERT INTO avaliacoes (
         data_registro,
@@ -81,7 +106,7 @@ def salvar_avaliacao(dados: Dict[str, Any], db_path: str = DB_NAME) -> Tuple[boo
     """
     try:
         init_db(db_path)
-        data_registro = dados.get("data_registro") or datetime.now().strftime("%d / %m / %Y %H:%M")
+        data_registro = dados.get("data_registro") or datetime.now().strftime("%d/%m/%Y %H:%M")
         
         nome = str(dados.get("nome", "") or dados.get("nome_candidato", "")).strip()
         cargo = str(dados.get("cargo", "") or dados.get("cargo_pretendido", "")).strip()
@@ -100,7 +125,6 @@ def salvar_avaliacao(dados: Dict[str, Any], db_path: str = DB_NAME) -> Tuple[boo
         sinal_vermelho = 1 if sinal_raw in [True, 1, "Sim", "sim", "1"] else 0
         
         parecer = str(dados.get("parecer_tecnico", "")).strip()
-        
         payload_json = json.dumps(dados, ensure_ascii=False, default=str)
         
         tokens_in = int(dados.get("tokens_in", 0) or 0)
@@ -194,56 +218,77 @@ def obter_historico_avaliacoes(db_path: str = DB_NAME):
             
             df = pd.DataFrame([dict(r) for r in rows])
             
-            # Normalização de compatibilidade de nomes de colunas (legado vs atual)
-            if 'vaga' not in df.columns:
-                if 'cargo_pretendido' in df.columns and 'cargo' in df.columns:
-                    df['vaga'] = df['cargo_pretendido'].fillna(df['cargo'])
-                elif 'cargo_pretendido' in df.columns:
-                    df['vaga'] = df['cargo_pretendido']
-                elif 'cargo' in df.columns:
-                    df['vaga'] = df['cargo']
-                else:
-                    df['vaga'] = 'N/A'
+            # Vaga / Cargo
+            vaga_resolvida = pd.Series(index=df.index, dtype=object)
+            for c in ["cargo_pretendido", "cargo", "vaga"]:
+                if c in df.columns:
+                    val = df[c].fillna("").astype(str).str.strip().replace({"": None, "None": None, "nan": None})
+                    vaga_resolvida = vaga_resolvida.combine_first(val)
+            df["vaga"] = vaga_resolvida.fillna("N/A").replace("", "N/A")
 
-            if 'nome' not in df.columns:
-                if 'nome_candidato' in df.columns:
-                    df['nome'] = df['nome_candidato']
-                else:
-                    df['nome'] = 'N/A'
+            # Nome
+            nome_resolvido = pd.Series(index=df.index, dtype=object)
+            for c in ["nome_candidato", "nome"]:
+                if c in df.columns:
+                    val = df[c].fillna("").astype(str).str.strip().replace({"": None, "None": None, "nan": None})
+                    nome_resolvido = nome_resolvido.combine_first(val)
+            df["nome"] = nome_resolvido.fillna("N/A").replace("", "N/A")
 
-            if 'nivel' not in df.columns:
-                if 'nivel_hierarquico' in df.columns:
-                    df['nivel'] = df['nivel_hierarquico']
-                else:
-                    df['nivel'] = 'N/A'
+            # Nível
+            nivel_resolvido = pd.Series(index=df.index, dtype=object)
+            for c in ["nivel_hierarquico", "nivel"]:
+                if c in df.columns:
+                    val = df[c].fillna("").astype(str).str.strip().replace({"": None, "None": None, "nan": None})
+                    nivel_resolvido = nivel_resolvido.combine_first(val)
+            df["nivel"] = nivel_resolvido.fillna("N/A").replace("", "N/A")
 
-            if 'data' not in df.columns:
-                if 'data_registro' in df.columns:
-                    df['data'] = df['data_registro']
-                else:
-                    df['data'] = ''
+            # Data
+            data_resolvida = pd.Series(index=df.index, dtype=object)
+            for c in ["data_registro", "data"]:
+                if c in df.columns:
+                    val = df[c].fillna("").astype(str).str.strip().replace({"": None, "None": None, "nan": None})
+                    data_resolvida = data_resolvida.combine_first(val)
+            df["data"] = data_resolvida.fillna("")
 
-            if 'pontos' not in df.columns:
-                if 'indice_global' in df.columns:
-                    df['pontos'] = df['indice_global']
-                elif 'pontuacao_fase1' in df.columns:
-                    df['pontos'] = df['pontuacao_fase1']
-                else:
-                    df['pontos'] = 0.0
+            # Pontos (prioriza coluna preenchida não nula entre pontos e métricas estruturais)
+            pontos_resolvidos = pd.Series(index=df.index, dtype=float)
+            for c in ["pontos", "indice_global", "pontuacao_fase1"]:
+                if c in df.columns:
+                    val = pd.to_numeric(df[c], errors="coerce")
+                    pontos_resolvidos = pontos_resolvidos.combine_first(val)
+            df["pontos"] = pontos_resolvidos.fillna(0.0)
 
-            if 'classificacao' not in df.columns:
-                if 'classificacao_final' in df.columns:
-                    df['classificacao'] = df['classificacao_final']
-                else:
-                    df['classificacao'] = ''
+            # Classificação
+            class_resolvida = pd.Series(index=df.index, dtype=object)
+            for c in ["classificacao_final", "classificacao"]:
+                if c in df.columns:
+                    val = df[c].fillna("").astype(str).str.strip().replace({"": None, "None": None, "nan": None})
+                    class_resolvida = class_resolvida.combine_first(val)
+            df["classificacao"] = class_resolvida.fillna("")
 
-            if 'arquétipo' not in df.columns:
-                if 'arquetipo_ativo' in df.columns:
-                    df['arquétipo'] = df['arquetipo_ativo']
-                elif 'arquetipo' in df.columns:
-                    df['arquétipo'] = df['arquetipo']
-                else:
-                    df['arquétipo'] = ''
+            # Arquétipo
+            arq_resolvido = pd.Series(index=df.index, dtype=object)
+            for c in ["arquetipo_ativo", "arquetipo", "arquétipo"]:
+                if c in df.columns:
+                    val = df[c].fillna("").astype(str).str.strip().replace({"": None, "None": None, "nan": None})
+                    arq_resolvido = arq_resolvido.combine_first(val)
+            df["arquétipo"] = arq_resolvido.fillna("")
+
+            # Telemetria com conversão segura
+            if "tokens_in" not in df.columns:
+                df["tokens_in"] = 0
+            else:
+                df["tokens_in"] = pd.to_numeric(df["tokens_in"], errors="coerce").fillna(0).astype(int)
+
+            if "tokens_out" not in df.columns:
+                df["tokens_out"] = 0
+            else:
+                df["tokens_out"] = pd.to_numeric(df["tokens_out"], errors="coerce").fillna(0).astype(int)
+
+            if "custo_brl" not in df.columns:
+                df["custo_brl"] = 0.0
+            else:
+                df["custo_brl"] = pd.to_numeric(df["custo_brl"], errors="coerce").fillna(0.0).astype(float)
                 
             return df
     except Exception as e:
