@@ -1,5 +1,6 @@
 ﻿import sqlite3
 import json
+import os
 from datetime import datetime
 from typing import Tuple, Dict, Any, List, Optional
 from contextlib import contextmanager
@@ -250,7 +251,7 @@ def obter_historico_avaliacoes(db_path: str = DB_NAME):
                     data_resolvida = data_resolvida.combine_first(val)
             df["data"] = data_resolvida.fillna("")
 
-            # Pontos (prioriza coluna preenchida não nula entre pontos e métricas estruturais)
+            # Pontos
             pontos_resolvidos = pd.Series(index=df.index, dtype=float)
             for c in ["pontos", "indice_global", "pontuacao_fase1"]:
                 if c in df.columns:
@@ -274,7 +275,7 @@ def obter_historico_avaliacoes(db_path: str = DB_NAME):
                     arq_resolvido = arq_resolvido.combine_first(val)
             df["arquétipo"] = arq_resolvido.fillna("")
 
-            # Telemetria com conversão segura
+            # Telemetria
             if "tokens_in" not in df.columns:
                 df["tokens_in"] = 0
             else:
@@ -294,3 +295,23 @@ def obter_historico_avaliacoes(db_path: str = DB_NAME):
     except Exception as e:
         print(f"[ERRO DB] Falha ao carregar histórico DataFrame: {e}")
         return pd.DataFrame()
+
+def exportar_banco_bytes(db_path: str = DB_NAME) -> bytes:
+    """Consolida as transações WAL e devolve os bytes do arquivo SQLite para download."""
+    init_db(db_path)
+    with get_db_cursor(db_path) as cursor:
+        cursor.execute("PRAGMA wal_checkpoint(TRUNCATE);")
+    with open(db_path, "rb") as f:
+        return f.read()
+
+def restaurar_banco_bytes(conteudo_bytes: bytes, db_path: str = DB_NAME) -> Tuple[bool, str]:
+    """Valida o cabeçalho SQLite e sobrescreve o banco com o backup enviado."""
+    if not conteudo_bytes or len(conteudo_bytes) < 16 or not conteudo_bytes.startswith(b"SQLite format 3\x00"):
+        return False, "Arquivo rejeitado: o arquivo enviado não é um banco SQLite válido."
+    try:
+        with open(db_path, "wb") as f:
+            f.write(conteudo_bytes)
+        init_db(db_path)
+        return True, "Banco de dados restaurado com sucesso!"
+    except Exception as e:
+        return False, f"Falha ao restaurar o banco: {str(e)}"

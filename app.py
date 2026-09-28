@@ -28,7 +28,7 @@ from core.constants import (
     FAIXAS_DELIBERACAO,
     COMPETENCIAS_FASE_1,
 )
-from services.database_service import init_db, salvar_avaliacao, listar_candidatos_salvos, obter_avaliacao_por_id, obter_historico_avaliacoes
+from services.database_service import init_db, salvar_avaliacao, listar_candidatos_salvos, obter_avaliacao_por_id, obter_historico_avaliacoes, exportar_banco_bytes, restaurar_banco_bytes
 from services.ai_service import configurar_gemini, gerar_analise_fase1, gerar_deliberacao_fase3
 from services.scoring_service import sortear_cartas_fase1, calcular_pontuacao_fase1, calcular_pontuacao_fase2, calcular_indice_global_integrado
 # Configuração inicial da página
@@ -1660,3 +1660,48 @@ with tab3:
                 st.dataframe(df_view, use_container_width=True, hide_index=True)
             else:
                 st.info("Nenhum registro no banco dinâmico.")
+
+            st.markdown("---")
+            st.markdown("### 💾 Gestão de Persistência & Backup do Banco")
+            st.caption("Faça o download do banco de dados para salvaguarda externa ou restaure um backup prévio.")
+
+            col_bkp1, col_bkp2 = st.columns(2)
+            with col_bkp1:
+                st.markdown("#### 📥 Exportação de Dados")
+                dados_db = exportar_banco_bytes()
+                nome_db_bkp = f"rh_diagnostico_backup_{datetime.now().strftime('%Y%m%d_%H%M%S')}.db"
+                st.download_button(
+                    label="⬇️ Baixar Banco Completo (.db)",
+                    data=dados_db,
+                    file_name=nome_db_bkp,
+                    mime="application/x-sqlite3",
+                    use_container_width=True,
+                    help="Gera uma cópia física idêntica do banco SQLite para armazenamento seguro."
+                )
+                if not df_hist.empty:
+                    csv_bytes = df_hist.to_csv(index=False).encode("utf-8-sig")
+                    nome_csv = f"historico_avaliacoes_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+                    st.download_button(
+                        label="📊 Exportar Histórico para CSV",
+                        data=csv_bytes,
+                        file_name=nome_csv,
+                        mime="text/csv",
+                        use_container_width=True,
+                        help="Exporta todas as linhas e métricas de telemetria em formato legível por Excel."
+                    )
+
+            with col_bkp2:
+                st.markdown("#### 📤 Restauração do Banco")
+                arquivo_bkp = st.file_uploader(
+                    "Selecione um arquivo .db de backup",
+                    type=["db", "sqlite"],
+                    key="uploader_restaurar_banco"
+                )
+                if arquivo_bkp is not None:
+                    if st.button("⚠️ Confirmar Restauração do Banco", type="primary", use_container_width=True):
+                        sucesso_rest, msg_rest = restaurar_banco_bytes(arquivo_bkp.getvalue())
+                        if sucesso_rest:
+                            st.success(msg_rest)
+                            st.rerun()
+                        else:
+                            st.error(msg_rest)
