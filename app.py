@@ -601,10 +601,37 @@ def classificar_arquétipo_manual(vaga_texto, selecao_manual="Automático (Detec
     txt = remover_acentos(vaga_texto)
     palavras_isoladas = set(re.findall(r'\b\w+\b', txt))
     
-    termos_inovacao = ["inovacao", "estrategia", "expansao", "planejamento", "transformacao", "digital", "negocios", "head", "diretor", "produtos", "futuro", "marketing", "tecnologia", "ti", "software", "produto", "pesquisa"]
-    termos_governanca = ["compliance", "auditoria", "juridico", "risco", "riscos", "controladoria", "governanca", "financeiro", "regulatorio", "processos", "contabil", "qualidade", "seguranca", "adm", "administrativo", "rh", "pessoal", "financas", "tesouraria"]
-    termos_operacoes = ["operacao", "operacoes", "producao", "manutencao", "logistica", "planta", "fabrica", "engenharia", "industrial", "supply", "cadeia", "campo", "execucao", "facilities", "almoxarifado", "estoque", "expedicao", "operacional"]
-    termos_comercial = ["comercial", "vendas", "account", "cliente", "mercado", "relacionamento", "parcerias", "key account", "business development", "sucesso do cliente", "cs", "atendimento", "varejo", "contas", "kam"]
+    termos_inovacao = [
+        "inovacao", "inovacoes", "estrategia", "estrategias", "estrategico", "estrategica", "estrategicos", "estrategicas",
+        "expansao", "expansoes", "planejamento", "transformacao", "digital", "negocios", "head",
+        "diretor", "diretora", "diretores", "diretoras", "produtos", "produto", "futuro", "marketing",
+        "tecnologia", "ti", "software", "pesquisa", "pesquisador", "pesquisadora", "dev", "tech", "growth"
+    ]
+    termos_governanca = [
+        "compliance", "auditoria", "auditor", "auditora", "auditores", "auditoras",
+        "juridico", "juridica", "juridicos", "juridicas", "advogado", "advogada", "advogados", "advogadas",
+        "risco", "riscos", "controladoria", "controlador", "controladora", "governanca",
+        "financeiro", "financeira", "financeiros", "financeiras", "financas", "tesouraria",
+        "regulatorio", "regulatoria", "regulatorios", "regulatorias", "processos",
+        "contabil", "contabilidade", "contador", "contadora", "contadores", "contadoras",
+        "fiscal", "fiscais", "tributario", "tributaria", "tributarios", "tributarias",
+        "qualidade", "seguranca", "adm", "administrativo", "administrativa", "administrativos", "administrativas",
+        "rh", "recursos humanos", "departamento pessoal", "dp", "pessoal"
+    ]
+    termos_operacoes = [
+        "operacao", "operacoes", "producao", "manutencao", "logistica", "planta", "fabrica",
+        "engenharia", "engenheiro", "engenheira", "engenheiros", "engenheiras", "industrial", "industriais",
+        "supply", "supply chain", "cadeia", "campo", "execucao", "facilities", "almoxarifado", "estoque",
+        "estoquista", "expedicao", "operacional", "operacionais", "operador", "operadora", "operadores", "operadoras",
+        "manutencista", "tecnico", "tecnica", "tecnicos", "tecnicas", "frota", "frotas", "transporte", "distribuicao"
+    ]
+    termos_comercial = [
+        "comercial", "comerciais", "vendas", "vendedor", "vendedora", "vendedores", "vendedoras",
+        "account", "cliente", "clientes", "mercado", "relacionamento", "parcerias", "key account",
+        "business development", "sucesso do cliente", "cs", "atendimento", "varejo", "contas", "kam",
+        "consultor", "consultora", "consultores", "consultoras", "executivo", "executiva", "executivos", "executivas",
+        "negociador", "negociadora", "inside sales", "sdr", "bdr", "prospeccao"
+    ]
     
     def pontuar_categoria(lista_termos):
         pontos = 0
