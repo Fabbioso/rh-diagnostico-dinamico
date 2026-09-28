@@ -1,3 +1,9 @@
+import sys
+# Limpeza preventiva de cache de subm?dulos para hot-reload do Streamlit Cloud
+for _mod in list(sys.modules.keys()):
+    if _mod.startswith("services.") or _mod.startswith("reports."):
+        del sys.modules[_mod]
+
 from datetime import datetime
 import io
 import math
