@@ -1,0 +1,57 @@
+name: Keep Streamlit Alive (Playwright)
+
+on:
+  schedule:
+    # Executa todos os dias às 08:00 e às 17:00 (horário de Brasília / UTC-3 -> 11:00 e 20:00 UTC)
+    - cron: '0 11,20 * * *'
+  workflow_dispatch: # Permite disparar manualmente pelo painel do GitHub a qualquer momento
+
+jobs:
+  wake_app:
+    name: Wake up Streamlit Container
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Configurar Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Instalar Playwright e Navegador
+        run: |
+          python -m pip install --upgrade pip
+          pip install playwright
+          playwright install chromium --with-deps
+
+      - name: Executar rotina de despertar
+        run: |
+          python -c '
+          import sys
+          from playwright.sync_api import sync_playwright
+
+          URL = "https://rh-diagnostico-dinamico.streamlit.app/"
+
+          print(f"Iniciando navegador Chromium...")
+          with sync_playwright() as p:
+              browser = p.chromium.launch(headless=True)
+              context = browser.new_context(
+                  user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+              )
+              page = context.new_page()
+              print(f"Acessando: {URL}")
+              page.goto(URL, wait_until="domcontentloaded", timeout=60000)
+              page.wait_for_timeout(6000)
+
+              # Procura o botão azul de reativação caso a tela de "Zzzz" esteja visível
+              wake_button = page.locator("button:has-text(\"Yes, get this app back up!\")")
+
+              if wake_button.count() > 0 and wake_button.is_visible():
+                  print("⚠️ Container dormindo detectado! Clicando no botão para acordar...")
+                  wake_button.click()
+                  page.wait_for_timeout(25000)
+                  print("✅ Botão acionado com sucesso. Aplicação reativada!")
+              else:
+                  print("✅ Aplicação já está acordada e respondendo normalmente.")
+
+              browser.close()
+          '
